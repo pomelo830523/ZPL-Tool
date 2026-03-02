@@ -7,54 +7,57 @@ import com.google.zxing.oned.Code128Writer;
 import com.google.zxing.oned.Code39Writer;
 import com.google.zxing.qrcode.QRCodeWriter;
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel;
+import com.zplviewer.model.RenderWarning;
 
 import javax.imageio.ImageIO;
 import java.awt.*;
 import java.awt.geom.AffineTransform;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
+import java.util.ArrayList;
 import java.util.EnumMap;
+import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
- * Local ZPL II renderer.
- * Uses Java AWT for text/graphics and ZXing (open source) for barcodes.
+ * 本地 ZPL II 渲染器：Java AWT（文字/圖形）+ ZXing（條碼）
  *
- * Supported commands:
- *   ^XA / ^XZ  – label start/end
- *   ^FO         – field origin
- *   ^A0         – scaleable font (height, width, orientation)
- *   ^CF         – change default font
- *   ^FD / ^FS   – field data / field separator
- *   ^BY         – barcode defaults (module width, height)
- *   ^BC         – Code 128
- *   ^B3         – Code 39
- *   ^BQ         – QR Code
- *   ^GB         – graphic box / line
- *   ^LH / ^PW / ^LL – label home / print width / label length (parsed, not resized)
+ * 生命週期：render() → analyze() → applyDebugOverlay()（選用）→ toPng()
  */
 public class ZplRenderer {
 
+    // ── Label dimensions ─────────────────────────────────────────────
     private final int labelWidthDots;
     private final int labelHeightDots;
 
-    // ── current field state ──────────────────────────────
-    private int fieldOriginX = 0;
-    private int fieldOriginY = 0;
+    // ── Current field state ──────────────────────────────────────────
+    private int  fieldOriginX    = 0;
+    private int  fieldOriginY    = 0;
 
-    // ── font state ───────────────────────────────────────
-    private int    fontHeight      = 30;
-    private char   fontOrientation = 'N';
+    // ── Font state ───────────────────────────────────────────────────
+    private int  fontHeight      = 30;
+    private char fontOrientation = 'N';
 
-    // ── barcode defaults (^BY) ───────────────────────────
-    private int barcodeModuleWidth = 2;
-    private int barcodeHeight      = 100;
+    // ── Barcode defaults (^BY) ───────────────────────────────────────
+    private int  barcodeModuleWidth = 2;
+    private int  barcodeHeight      = 100;
 
-    // ── pending barcode (set by ^BC / ^B3 / ^BQ, consumed by ^FD) ───
+    // ── Pending barcode (set by ^BC/^B3/^BQ, consumed by ^FD) ───────
     private String   pendingBarcodeType   = null;
     private String[] pendingBarcodeParams = null;
 
-    private Graphics2D g;
+    // ── BoundingBox tracking ─────────────────────────────────────────
+    /**
+     * 每個渲染欄位的邊界記錄。
+     * Java record：x/y = 左上角，w/h = 寬高，type/label 用於警告說明。
+     */
+    private record FieldRecord(int x, int y, int w, int h, String type, String label) {}
+    private final List<FieldRecord> renderedFields = new ArrayList<>();
+
+    // ── Graphics state ───────────────────────────────────────────────
+    private BufferedImage image;
+    private Graphics2D    g;
 
     // ─────────────────────────────────────────────────────────────────
     public ZplRenderer(int labelWidthDots, int labelHeightDots) {
@@ -62,56 +65,188 @@ public class ZplRenderer {
         this.labelHeightDots = Math.max(labelHeightDots, 50);
     }
 
-    /** Render ZPL string and return PNG bytes. */
-    public byte[] renderToPng(String zpl) throws Exception {
-        BufferedImage image = new BufferedImage(
-                labelWidthDots, labelHeightDots, BufferedImage.TYPE_INT_RGB);
+    // ═════════════════════════════════════════════════════════════════
+    //  Step 1 — 渲染 ZPL
+    // ═════════════════════════════════════════════════════════════════
 
+    public void render(String zpl) {
+        image = new BufferedImage(labelWidthDots, labelHeightDots, BufferedImage.TYPE_INT_RGB);
         g = image.createGraphics();
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,      RenderingHints.VALUE_ANTIALIAS_ON);
         g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
         g.setRenderingHint(RenderingHints.KEY_RENDERING,         RenderingHints.VALUE_RENDER_QUALITY);
 
-        // White background
         g.setColor(Color.WHITE);
         g.fillRect(0, 0, labelWidthDots, labelHeightDots);
         g.setColor(Color.BLACK);
 
         parse(zpl);
-        g.dispose();
+    }
 
+    // ═════════════════════════════════════════════════════════════════
+    //  Step 2 — 分析警告
+    // ═════════════════════════════════════════════════════════════════
+
+    /**
+     * 分析所有已渲染欄位，回傳問題清單。
+     *
+     * @param overlapThresholdDots 重疊閾值（dots）：交集的寬 AND 高都超過此值才視為重疊
+     */
+    public List<RenderWarning> analyze(int overlapThresholdDots) {
+        List<RenderWarning> warnings = new ArrayList<>();
+        checkOutOfBounds(warnings);
+        checkOverlaps(warnings, Math.max(0, overlapThresholdDots));
+        return warnings;
+    }
+
+    private void checkOutOfBounds(List<RenderWarning> warnings) {
+        for (FieldRecord f : renderedFields) {
+            List<String> sides = new ArrayList<>();
+            int excess = 0;
+
+            if (f.x() < 0)                           { sides.add("LEFT");   excess = Math.max(excess, -f.x()); }
+            if (f.y() < 0)                           { sides.add("TOP");    excess = Math.max(excess, -f.y()); }
+            if (f.x() + f.w() > labelWidthDots)      { sides.add("RIGHT");  excess = Math.max(excess, f.x() + f.w() - labelWidthDots); }
+            if (f.y() + f.h() > labelHeightDots)     { sides.add("BOTTOM"); excess = Math.max(excess, f.y() + f.h() - labelHeightDots); }
+
+            if (!sides.isEmpty()) {
+                RenderWarning w = new RenderWarning();
+                w.setType("OUT_OF_BOUNDS");
+                w.setFieldA(f.type() + ": " + f.label());
+                w.setSides(String.join("+", sides));
+                w.setExcessDots(excess);
+                w.setDetail(sides.stream().collect(Collectors.joining("、")) + " 超出 " + excess + " dots");
+                w.setBoundsA(new int[]{f.x(), f.y(), f.w(), f.h()});
+                warnings.add(w);
+            }
+        }
+    }
+
+    private void checkOverlaps(List<RenderWarning> warnings, int threshold) {
+        for (int i = 0; i < renderedFields.size(); i++) {
+            for (int j = i + 1; j < renderedFields.size(); j++) {
+                FieldRecord a = renderedFields.get(i);
+                FieldRecord b = renderedFields.get(j);
+
+                int ix = Math.max(a.x(), b.x());
+                int iy = Math.max(a.y(), b.y());
+                int iw = Math.min(a.x() + a.w(), b.x() + b.w()) - ix;
+                int ih = Math.min(a.y() + a.h(), b.y() + b.h()) - iy;
+
+                // 兩個維度都必須超過閾值才視為真正重疊
+                if (iw > threshold && ih > threshold) {
+                    RenderWarning w = new RenderWarning();
+                    w.setType("OVERLAP");
+                    w.setFieldA(a.type() + ": " + a.label());
+                    w.setFieldB(b.type() + ": " + b.label());
+                    w.setDetail("重疊區域 " + iw + "×" + ih + " dots");
+                    w.setBoundsA(new int[]{a.x(), a.y(), a.w(), a.h()});
+                    w.setBoundsB(new int[]{b.x(), b.y(), b.w(), b.h()});
+                    w.setIntersect(new int[]{ix, iy, iw, ih});
+                    warnings.add(w);
+                }
+            }
+        }
+    }
+
+    // ═════════════════════════════════════════════════════════════════
+    //  Step 3（選用）— Debug Overlay
+    // ═════════════════════════════════════════════════════════════════
+
+    /**
+     * 在已渲染的圖片上疊加 Debug 標註：
+     * - 藍色實線：標籤邊界
+     * - 紅色虛線框 + 半透明紅填色：超出邊界的欄位（取可見部分）
+     * - 橘色虛線框 + 半透明橘填色：重疊欄位對 + 交集區
+     */
+    public void applyDebugOverlay(List<RenderWarning> warnings) {
+        Stroke dashed = new BasicStroke(2, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER,
+                                        10, new float[]{6, 4}, 0);
+        Stroke solid  = new BasicStroke(2);
+
+        for (RenderWarning w : warnings) {
+            if ("OUT_OF_BOUNDS".equals(w.getType())) {
+                int[] b = w.getBoundsA();
+                // 取在 label 範圍內的可見矩形
+                int vx = clamp(b[0], 0, labelWidthDots);
+                int vy = clamp(b[1], 0, labelHeightDots);
+                int vw = clamp(b[0] + b[2], 0, labelWidthDots) - vx;
+                int vh = clamp(b[1] + b[3], 0, labelHeightDots) - vy;
+                if (vw <= 0 || vh <= 0) continue;
+
+                // 半透明紅色填色
+                g.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.30f));
+                g.setColor(new Color(220, 30, 30));
+                g.fillRect(vx, vy, vw, vh);
+
+                // 紅色虛線框
+                g.setComposite(AlphaComposite.SrcOver);
+                g.setColor(new Color(180, 0, 0));
+                g.setStroke(dashed);
+                g.drawRect(vx, vy, vw, vh);
+
+            } else if ("OVERLAP".equals(w.getType())) {
+                int[] inter = w.getIntersect();
+                int[] bA    = w.getBoundsA();
+                int[] bB    = w.getBoundsB();
+
+                // 半透明橘色填色在交集區
+                g.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.35f));
+                g.setColor(new Color(255, 140, 0));
+                g.fillRect(inter[0], inter[1], inter[2], inter[3]);
+
+                // 橘色虛線框框住兩個欄位
+                g.setComposite(AlphaComposite.SrcOver);
+                g.setColor(new Color(200, 100, 0));
+                g.setStroke(dashed);
+                g.drawRect(bA[0], bA[1], bA[2], bA[3]);
+                g.drawRect(bB[0], bB[1], bB[2], bB[3]);
+            }
+        }
+
+        // 標籤邊界（藍色實線，永遠繪製）
+        g.setComposite(AlphaComposite.SrcOver);
+        g.setColor(new Color(30, 100, 220));
+        g.setStroke(solid);
+        g.drawRect(1, 1, labelWidthDots - 2, labelHeightDots - 2);
+        g.setStroke(new BasicStroke(1));
+    }
+
+    // ═════════════════════════════════════════════════════════════════
+    //  Step 4 — 輸出 PNG
+    // ═════════════════════════════════════════════════════════════════
+
+    public byte[] toPng() throws Exception {
+        g.dispose();
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         ImageIO.write(image, "PNG", baos);
         return baos.toByteArray();
     }
 
     // ─────────────────────────────────────────────────────────────────
-    //  Parser
+    //  ZPL Parser
     // ─────────────────────────────────────────────────────────────────
 
     private void parse(String zpl) {
         int i = 0;
         while (i < zpl.length()) {
             char c = zpl.charAt(i);
-            if (c != '^' && c != '~') { i++; continue; }
             if (c == '~') { i++; continue; }          // skip ~ commands
+            if (c != '^') { i++; continue; }
 
-            i++;                                       // skip '^'
+            i++;
             if (i >= zpl.length()) break;
 
-            // Read 2-char command code
-            int cmdEnd = Math.min(i + 2, zpl.length());
-            String cmd = zpl.substring(i, cmdEnd).toUpperCase();
+            int    cmdEnd = Math.min(i + 2, zpl.length());
+            String cmd    = zpl.substring(i, cmdEnd).toUpperCase();
             i = cmdEnd;
 
             if ("FD".equals(cmd)) {
-                // Data ends at ^FS (or end of string)
-                int fsIdx = findCaret(zpl, i, "FS");
-                String data = (fsIdx < 0) ? zpl.substring(i) : zpl.substring(i, fsIdx);
-                i = (fsIdx < 0) ? zpl.length() : fsIdx + 3;   // +3 to skip ^FS
+                int    fsIdx = findCaret(zpl, i, "FS");
+                String data  = (fsIdx < 0) ? zpl.substring(i) : zpl.substring(i, fsIdx);
+                i = (fsIdx < 0) ? zpl.length() : fsIdx + 3;   // skip ^FS
                 onFieldData(data);
             } else {
-                // Params: everything until next ^ or ~
                 int end = i;
                 while (end < zpl.length() && zpl.charAt(end) != '^' && zpl.charAt(end) != '~') end++;
                 String params = zpl.substring(i, end).trim().replaceAll("[\r\n\t]", "");
@@ -121,9 +256,9 @@ public class ZplRenderer {
         }
     }
 
-    /** Return index of '^' before 'cmd' starting from 'from', or -1. */
+    /** 從 from 開始尋找 ^CMD，回傳 ^ 的 index，找不到回傳 -1。 */
     private int findCaret(String zpl, int from, String cmd) {
-        for (int i = from; i < zpl.length() - 2; i++) {
+        for (int i = from; i + 2 < zpl.length(); i++) {
             if (zpl.charAt(i) == '^' && zpl.substring(i + 1, i + 3).equalsIgnoreCase(cmd))
                 return i;
         }
@@ -141,71 +276,53 @@ public class ZplRenderer {
             case "XA" -> resetState();
             case "XZ" -> { /* end of label */ }
 
-            // Field origin
-            case "FO" -> { fieldOriginX = intAt(p, 0, 0); fieldOriginY = intAt(p, 1, 0); }
+            case "FO" -> { fieldOriginX = intAt(p, 0, 0);          fieldOriginY = intAt(p, 1, 0); }
             case "FT" -> { fieldOriginX = intAt(p, 0, fieldOriginX); fieldOriginY = intAt(p, 1, fieldOriginY); }
 
-            // Font
             case "A0","A1","A2","A3","A4","A5","A6","A7","A8","A9" -> {
-                // ^A0{orientation},{height},{width}
                 if (p.length > 0 && !p[0].isEmpty()) fontOrientation = p[0].toUpperCase().charAt(0);
                 fontHeight = intAt(p, 1, fontHeight);
             }
-            case "CF" -> fontHeight = intAt(p, 1, fontHeight);  // ^CF{font},{height},{width}
+            case "CF" -> fontHeight = intAt(p, 1, fontHeight);
 
-            // Barcode defaults
             case "BY" -> {
                 barcodeModuleWidth = intAt(p, 0, barcodeModuleWidth);
                 barcodeHeight      = intAt(p, 2, barcodeHeight);
             }
 
-            // Barcode types – set pending, consumed when ^FD arrives
-            case "BC" -> { pendingBarcodeType = "BC"; pendingBarcodeParams = p; }  // Code 128
-            case "B3" -> { pendingBarcodeType = "B3"; pendingBarcodeParams = p; }  // Code 39
-            case "BQ" -> { pendingBarcodeType = "BQ"; pendingBarcodeParams = p; }  // QR Code
-            case "BE" -> { pendingBarcodeType = "BE"; pendingBarcodeParams = p; }  // EAN-13
-            case "BU" -> { pendingBarcodeType = "BU"; pendingBarcodeParams = p; }  // UPC-A
+            case "BC" -> { pendingBarcodeType = "BC"; pendingBarcodeParams = p; }
+            case "B3" -> { pendingBarcodeType = "B3"; pendingBarcodeParams = p; }
+            case "BQ" -> { pendingBarcodeType = "BQ"; pendingBarcodeParams = p; }
+            case "BE" -> { pendingBarcodeType = "BE"; pendingBarcodeParams = p; }
+            case "BU" -> { pendingBarcodeType = "BU"; pendingBarcodeParams = p; }
 
-            // Graphic box: ^GB{width},{height},{thickness},{color},{rounding}
             case "GB" -> {
                 int w     = intAt(p, 0, 1);
                 int h     = intAt(p, 1, 1);
                 int thick = intAt(p, 2, 1);
                 Color col = (p.length > 3 && "W".equalsIgnoreCase(p[3].trim())) ? Color.WHITE : Color.BLACK;
-                int rnd   = intAt(p, 4, 0);
-                drawBox(w, h, thick, col, rnd);
+                drawBox(w, h, thick, col, intAt(p, 4, 0));
             }
 
-            // Field separator – clear pending barcode
             case "FS" -> { pendingBarcodeType = null; pendingBarcodeParams = null; }
-
-            // Informational – no rendering needed
-            case "LH","PW","LL","PR","PQ","CI","PM","MN","MT","MD","MMT","JMA","JMB" -> { /* ignore */ }
         }
     }
 
     private void resetState() {
-        fieldOriginX       = 0;
-        fieldOriginY       = 0;
-        fontHeight         = 30;
-        fontOrientation    = 'N';
-        barcodeModuleWidth = 2;
-        barcodeHeight      = 100;
-        pendingBarcodeType = null;
-        pendingBarcodeParams = null;
+        fieldOriginX = 0; fieldOriginY = 0;
+        fontHeight = 30;  fontOrientation = 'N';
+        barcodeModuleWidth = 2; barcodeHeight = 100;
+        pendingBarcodeType = null; pendingBarcodeParams = null;
     }
 
     // ─────────────────────────────────────────────────────────────────
-    //  Field data handler
+    //  Field data → 渲染 + 記錄 BoundingBox
     // ─────────────────────────────────────────────────────────────────
 
     private void onFieldData(String data) {
         try {
-            if (pendingBarcodeType != null) {
-                renderBarcode(data);
-            } else {
-                renderText(data);
-            }
+            if (pendingBarcodeType != null) renderBarcode(data);
+            else                            renderText(data);
         } catch (Exception ex) {
             renderText("[Err: " + ex.getMessage() + "]");
         }
@@ -213,151 +330,125 @@ public class ZplRenderer {
         pendingBarcodeParams = null;
     }
 
-    // ─────────────────────────────────────────────────────────────────
-    //  Text rendering
-    // ─────────────────────────────────────────────────────────────────
+    // ── Text ─────────────────────────────────────────────────────────
 
     private void renderText(String text) {
         int fh = Math.max(fontHeight, 8);
-        Font font = new Font(Font.SANS_SERIF, Font.PLAIN, fh);
-        g.setFont(font);
+        g.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, fh));
         g.setColor(Color.BLACK);
         FontMetrics fm = g.getFontMetrics();
 
+        int textW = fm.stringWidth(text);
+        int textH = fm.getHeight();
+
+        // 記錄 BoundingBox（以正常方向計算；旋轉時 w/h 互換，保守處理）
+        int recW = (fontOrientation == 'R' || fontOrientation == 'B') ? textH : textW;
+        int recH = (fontOrientation == 'R' || fontOrientation == 'B') ? textW : textH;
+        renderedFields.add(new FieldRecord(fieldOriginX, fieldOriginY, recW, recH,
+                "TEXT", truncate(text, 25)));
+
         AffineTransform saved = g.getTransform();
-
         switch (fontOrientation) {
-            case 'R' -> {  // 90° clockwise
-                g.translate(fieldOriginX + fh, fieldOriginY);
-                g.rotate(Math.PI / 2);
-                g.drawString(text, 0, fm.getAscent());
-            }
-            case 'I' -> {  // 180°
-                g.translate(fieldOriginX + fm.stringWidth(text), fieldOriginY + fh);
-                g.rotate(Math.PI);
-                g.drawString(text, 0, fm.getAscent());
-            }
-            case 'B' -> {  // 270° (bottom-up)
-                g.translate(fieldOriginX, fieldOriginY + fm.stringWidth(text));
-                g.rotate(-Math.PI / 2);
-                g.drawString(text, 0, fm.getAscent());
-            }
-            default -> {   // 'N' – normal
-                g.drawString(text, fieldOriginX, fieldOriginY + fm.getAscent());
-            }
+            case 'R' -> { g.translate(fieldOriginX + fh, fieldOriginY); g.rotate(Math.PI / 2); }
+            case 'I' -> { g.translate(fieldOriginX + textW, fieldOriginY + fh); g.rotate(Math.PI); }
+            case 'B' -> { g.translate(fieldOriginX, fieldOriginY + textW); g.rotate(-Math.PI / 2); }
+            default  -> {}
         }
-
+        int drawX = (fontOrientation == 'N') ? fieldOriginX : 0;
+        int drawY = (fontOrientation == 'N') ? fieldOriginY + fm.getAscent() : fm.getAscent();
+        g.drawString(text, drawX, drawY);
         g.setTransform(saved);
     }
 
-    // ─────────────────────────────────────────────────────────────────
-    //  Barcode routing
-    // ─────────────────────────────────────────────────────────────────
+    // ── Barcode routing ───────────────────────────────────────────────
 
     private void renderBarcode(String data) throws Exception {
         switch (pendingBarcodeType) {
-            case "BC"       -> renderCode128(data);
-            case "B3"       -> renderCode39(data);
-            case "BQ"       -> renderQRCode(data);
-            case "BE","BU"  -> renderEAN(data);
-            default         -> renderCode128(data);
+            case "BC"      -> renderCode128(data);
+            case "B3"      -> renderCode39(data);
+            case "BQ"      -> renderQRCode(data);
+            case "BE","BU" -> renderCode128(data);  // fallback
+            default        -> renderCode128(data);
         }
     }
 
-    // ── Code 128 ─────────────────────────────────────────────────────
-
     private void renderCode128(String data) throws Exception {
-        int bh = (pendingBarcodeParams != null) ? intAt(pendingBarcodeParams, 1, barcodeHeight) : barcodeHeight;
-        boolean printText = (pendingBarcodeParams == null)
-                || !"N".equalsIgnoreCase(safeGet(pendingBarcodeParams, 2, "Y"));
+        int bh        = intAt(pendingBarcodeParams, 1, barcodeHeight);
+        boolean print = !"N".equalsIgnoreCase(safeGet(pendingBarcodeParams, 2, "Y"));
+        int textExtra = print ? (Math.max(14, barcodeModuleWidth * 3) + 4) : 0;
 
-        // Estimate width: (modules * moduleWidth); Code128 ~11 bars/char + 35 overhead
         int estWidth = Math.max((data.length() * 11 + 45) * barcodeModuleWidth, 100);
 
         Map<EncodeHintType, Object> hints = new EnumMap<>(EncodeHintType.class);
         hints.put(EncodeHintType.MARGIN, 0);
+        BitMatrix matrix  = new Code128Writer().encode(data, BarcodeFormat.CODE_128, estWidth, bh, hints);
+        BufferedImage bar = MatrixToImageWriter.toBufferedImage(matrix);
 
-        BitMatrix matrix = new Code128Writer().encode(data, BarcodeFormat.CODE_128, estWidth, bh, hints);
-        BufferedImage barImg = MatrixToImageWriter.toBufferedImage(matrix);
-        g.drawImage(barImg, fieldOriginX, fieldOriginY, null);
+        g.drawImage(bar, fieldOriginX, fieldOriginY, null);
 
-        if (printText) {
+        if (print) {
             int textSize = Math.max(14, barcodeModuleWidth * 3);
             g.setFont(new Font(Font.MONOSPACED, Font.PLAIN, textSize));
             FontMetrics fm = g.getFontMetrics();
-            int tx = fieldOriginX + (barImg.getWidth() - fm.stringWidth(data)) / 2;
             g.setColor(Color.BLACK);
+            int tx = fieldOriginX + (bar.getWidth() - fm.stringWidth(data)) / 2;
             g.drawString(data, Math.max(tx, fieldOriginX), fieldOriginY + bh + fm.getAscent() + 2);
         }
+
+        renderedFields.add(new FieldRecord(
+                fieldOriginX, fieldOriginY, bar.getWidth(), bh + textExtra, "CODE128", truncate(data, 20)));
     }
 
-    // ── Code 39 ──────────────────────────────────────────────────────
-
     private void renderCode39(String data) throws Exception {
-        int bh = (pendingBarcodeParams != null) ? intAt(pendingBarcodeParams, 1, barcodeHeight) : barcodeHeight;
+        int bh = intAt(pendingBarcodeParams, 1, barcodeHeight);
         int estWidth = Math.max((data.length() * 16 + 30) * barcodeModuleWidth, 100);
 
         Map<EncodeHintType, Object> hints = new EnumMap<>(EncodeHintType.class);
         hints.put(EncodeHintType.MARGIN, 0);
+        BitMatrix matrix  = new Code39Writer().encode(data, BarcodeFormat.CODE_39, estWidth, bh, hints);
+        BufferedImage bar = MatrixToImageWriter.toBufferedImage(matrix);
 
-        BitMatrix matrix = new Code39Writer().encode(data, BarcodeFormat.CODE_39, estWidth, bh, hints);
-        g.drawImage(MatrixToImageWriter.toBufferedImage(matrix), fieldOriginX, fieldOriginY, null);
+        g.drawImage(bar, fieldOriginX, fieldOriginY, null);
+        renderedFields.add(new FieldRecord(
+                fieldOriginX, fieldOriginY, bar.getWidth(), bh, "CODE39", truncate(data, 20)));
     }
 
-    // ── QR Code ──────────────────────────────────────────────────────
-
     private void renderQRCode(String data) throws Exception {
-        int magnification = (pendingBarcodeParams != null) ? intAt(pendingBarcodeParams, 2, 3) : 3;
+        int magnification = intAt(pendingBarcodeParams, 2, 3);
         int size = Math.max(magnification * 20, 80);
 
         Map<EncodeHintType, Object> hints = new EnumMap<>(EncodeHintType.class);
         hints.put(EncodeHintType.ERROR_CORRECTION, ErrorCorrectionLevel.M);
         hints.put(EncodeHintType.MARGIN, 1);
-
         BitMatrix matrix = new QRCodeWriter().encode(data, BarcodeFormat.QR_CODE, size, size, hints);
-        g.drawImage(MatrixToImageWriter.toBufferedImage(matrix), fieldOriginX, fieldOriginY, null);
+        BufferedImage qr = MatrixToImageWriter.toBufferedImage(matrix);
+
+        g.drawImage(qr, fieldOriginX, fieldOriginY, null);
+        renderedFields.add(new FieldRecord(
+                fieldOriginX, fieldOriginY, qr.getWidth(), qr.getHeight(), "QRCODE", truncate(data, 20)));
     }
 
-    // ── EAN-13 / UPC-A (fallback to Code 128) ────────────────────────
-
-    private void renderEAN(String data) throws Exception {
-        // Use Code 128 as a safe fallback for EAN/UPC
-        int bh = (pendingBarcodeParams != null) ? intAt(pendingBarcodeParams, 1, barcodeHeight) : barcodeHeight;
-        int estWidth = Math.max((data.length() * 11 + 45) * barcodeModuleWidth, 100);
-
-        Map<EncodeHintType, Object> hints = new EnumMap<>(EncodeHintType.class);
-        hints.put(EncodeHintType.MARGIN, 0);
-
-        BitMatrix matrix = new Code128Writer().encode(data, BarcodeFormat.CODE_128, estWidth, bh, hints);
-        g.drawImage(MatrixToImageWriter.toBufferedImage(matrix), fieldOriginX, fieldOriginY, null);
-    }
-
-    // ─────────────────────────────────────────────────────────────────
-    //  Graphic box
-    // ─────────────────────────────────────────────────────────────────
+    // ── Graphic Box ───────────────────────────────────────────────────
 
     private void drawBox(int width, int height, int thickness, Color color, int rounding) {
         g.setColor(color);
-        Stroke savedStroke = g.getStroke();
+        Stroke saved  = g.getStroke();
         boolean filled = (thickness * 2 >= Math.min(width, height));
 
         if (rounding > 0) {
             int arc = rounding * Math.min(width, height) / 8;
             if (filled) g.fillRoundRect(fieldOriginX, fieldOriginY, width, height, arc, arc);
-            else {
-                g.setStroke(new BasicStroke(thickness));
-                g.drawRoundRect(fieldOriginX, fieldOriginY, width, height, arc, arc);
-            }
+            else { g.setStroke(new BasicStroke(thickness)); g.drawRoundRect(fieldOriginX, fieldOriginY, width, height, arc, arc); }
         } else {
             if (filled) g.fillRect(fieldOriginX, fieldOriginY, width, height);
-            else {
-                g.setStroke(new BasicStroke(thickness));
-                g.drawRect(fieldOriginX, fieldOriginY, width, height);
-            }
+            else { g.setStroke(new BasicStroke(thickness)); g.drawRect(fieldOriginX, fieldOriginY, width, height); }
         }
 
-        g.setStroke(savedStroke);
+        g.setStroke(saved);
         g.setColor(Color.BLACK);
+
+        renderedFields.add(new FieldRecord(
+                fieldOriginX, fieldOriginY, width, height, "BOX", width + "×" + height));
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -371,8 +462,16 @@ public class ZplRenderer {
     }
 
     private String safeGet(String[] arr, int idx, String def) {
-        if (arr == null || idx >= arr.length || arr[idx] == null) return def;
+        if (arr == null || idx >= arr.length) return def;
         String v = arr[idx].trim();
         return v.isEmpty() ? def : v;
+    }
+
+    private int clamp(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    private String truncate(String s, int max) {
+        return (s != null && s.length() > max) ? s.substring(0, max) + "…" : s;
     }
 }

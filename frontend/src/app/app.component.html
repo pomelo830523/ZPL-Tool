@@ -10,7 +10,7 @@
 
   <main class="main-content">
 
-    <!-- Input Panel -->
+    <!-- ══ Input Panel ══════════════════════════════════════════════ -->
     <section class="panel input-panel">
       <div class="panel-header">
         <h2>ZPL 輸入</h2>
@@ -30,6 +30,11 @@
               <option [ngValue]="12">300 DPI</option>
               <option [ngValue]="24">600 DPI</option>
             </select>
+          </div>
+          <div class="setting-item">
+            <label for="threshold">重疊閾值 (dots)</label>
+            <input id="threshold" type="number" [(ngModel)]="overlapThresholdDots"
+                   min="0" max="100" step="1" title="兩個欄位的交集寬度與高度同時超過此值才視為重疊">
           </div>
         </div>
       </div>
@@ -59,17 +64,32 @@
       </div>
     </section>
 
-    <!-- Output Panel -->
+    <!-- ══ Output Panel ══════════════════════════════════════════════ -->
     <section class="panel output-panel">
       <div class="panel-header">
-        <h2>預覽結果</h2>
-        @if (imageBase64) {
-          <button class="btn btn-download" (click)="downloadImage()">
-            下載 PNG
-          </button>
-        }
+        <h2>
+          預覽結果
+          @if (warningCount > 0) {
+            <span class="warning-badge-header" [class.has-error]="outOfBoundsCount > 0">
+              {{ warningCount }} 個問題
+            </span>
+          }
+        </h2>
+        <div class="header-actions">
+          @if (imageBase64) {
+            <button class="btn-debug" [class.active]="debugMode"
+                    (click)="toggleDebug()" [disabled]="isLoading"
+                    title="Debug 模式：在圖片上標示超出邊界（紅）與重疊（橘）區域">
+              {{ debugMode ? '一般檢視' : 'Debug 檢視' }}
+            </button>
+            <button class="btn-download" (click)="downloadImage()">
+              下載 PNG
+            </button>
+          }
+        </div>
       </div>
 
+      <!-- Preview image -->
       <div class="preview-area">
         @if (isLoading) {
           <div class="state-container">
@@ -102,6 +122,48 @@
           </div>
         }
       </div>
+
+      <!-- Warnings panel -->
+      @if (imageBase64 && !isLoading) {
+        @if (warningCount > 0) {
+          <div class="warnings-panel">
+            <div class="warnings-summary">
+              <span class="warnings-title">偵測到 {{ warningCount }} 個問題</span>
+              <span class="warnings-chips">
+                @if (outOfBoundsCount > 0) {
+                  <span class="chip chip-oob">超出邊界 ×{{ outOfBoundsCount }}</span>
+                }
+                @if (overlapCount > 0) {
+                  <span class="chip chip-overlap">重疊 ×{{ overlapCount }}</span>
+                }
+              </span>
+              @if (debugMode) {
+                <span class="debug-hint">Debug 標註已顯示於圖片中</span>
+              } @else {
+                <span class="debug-hint">開啟「Debug 檢視」可在圖片上標示問題位置</span>
+              }
+            </div>
+            <div class="warnings-list">
+              @for (w of warnings; track $index) {
+                <div class="warning-item" [class.oob]="w.type === 'OUT_OF_BOUNDS'" [class.ov]="w.type === 'OVERLAP'">
+                  <span class="w-badge">{{ w.type === 'OUT_OF_BOUNDS' ? '超出邊界' : '重疊' }}</span>
+                  <div class="w-body">
+                    <div class="w-fields">
+                      {{ w.fieldA }}
+                      @if (w.fieldB) { <span class="w-sep">↔</span> {{ w.fieldB }} }
+                    </div>
+                    <div class="w-detail">{{ w.detail }}</div>
+                  </div>
+                </div>
+              }
+            </div>
+          </div>
+        } @else {
+          <div class="warnings-ok">
+            <span class="ok-icon">✓</span> 未偵測到問題（閾值 {{ overlapThresholdDots }} dots）
+          </div>
+        }
+      }
     </section>
 
   </main>

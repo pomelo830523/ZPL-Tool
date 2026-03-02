@@ -1,5 +1,6 @@
 package com.zplviewer.controller;
 
+import com.zplviewer.model.ConvertResponse;
 import com.zplviewer.model.ZplRequest;
 import com.zplviewer.service.ZplService;
 import org.springframework.http.HttpStatus;
@@ -25,8 +26,8 @@ public class ZplController {
                     .body(Map.of("error", "ZPL 內容不可為空"));
         }
         try {
-            String base64Image = zplService.convertToPng(request);
-            return ResponseEntity.ok(Map.of("image", base64Image));
+            ConvertResponse result = zplService.convertToPng(request);
+            return ResponseEntity.ok(result);
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", "ZPL 轉換失敗: " + e.getMessage()));

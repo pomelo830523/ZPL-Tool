@@ -2,6 +2,23 @@ import { Component } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
 
+interface RenderWarning {
+  type: 'OUT_OF_BOUNDS' | 'OVERLAP';
+  fieldA: string;
+  fieldB?: string;
+  detail: string;
+  sides?: string;
+  excessDots?: number;
+  boundsA?: number[];
+  boundsB?: number[];
+  intersect?: number[];
+}
+
+interface ConvertResponse {
+  image: string;
+  warnings: RenderWarning[];
+}
+
 @Component({
   selector: 'app-root',
   standalone: true,
@@ -20,13 +37,23 @@ export class AppComponent {
 ^FO50,445^BY1^B3N,80,Y,N^FDHELLO-WORLD^FS
 ^XZ`;
 
-  imageBase64 = '';
-  isLoading = false;
-  errorMessage = '';
+  // ── Preview state ──────────────────────────────────────────────────
+  imageBase64   = '';
+  isLoading     = false;
+  errorMessage  = '';
+  warnings: RenderWarning[] = [];
 
-  labelWidth = 4;
+  // ── Label settings ─────────────────────────────────────────────────
+  labelWidth  = 4;
   labelHeight = 6;
-  dpmm = 8;
+  dpmm        = 8;
+
+  // ── Analysis settings ──────────────────────────────────────────────
+  /** 重疊閾值（dots）：交集的寬 AND 高都超過此值才視為重疊 */
+  overlapThresholdDots = 5;
+
+  // ── Debug mode ─────────────────────────────────────────────────────
+  debugMode = false;
 
   private readonly apiUrl = 'http://localhost:8080/api/zpl/convert';
 
@@ -38,19 +65,23 @@ export class AppComponent {
       return;
     }
 
-    this.isLoading = true;
+    this.isLoading    = true;
     this.errorMessage = '';
-    this.imageBase64 = '';
+    this.imageBase64  = '';
+    this.warnings     = [];
 
-    this.http.post<{ image: string }>(this.apiUrl, {
-      zpl: this.zplInput,
-      width: this.labelWidth,
-      height: this.labelHeight,
-      dpmm: this.dpmm
+    this.http.post<ConvertResponse>(this.apiUrl, {
+      zpl:                  this.zplInput,
+      width:                this.labelWidth,
+      height:               this.labelHeight,
+      dpmm:                 this.dpmm,
+      debug:                this.debugMode,
+      overlapThresholdDots: this.overlapThresholdDots
     }).subscribe({
       next: (response) => {
         this.imageBase64 = response.image;
-        this.isLoading = false;
+        this.warnings    = response.warnings ?? [];
+        this.isLoading   = false;
       },
       error: (err) => {
         this.errorMessage = err.error?.error
@@ -60,16 +91,28 @@ export class AppComponent {
     });
   }
 
+  /** 切換 Debug 模式；若已有圖片則立即重新轉換以套用/移除標註 */
+  toggleDebug(): void {
+    this.debugMode = !this.debugMode;
+    if (this.imageBase64) this.convertZpl();
+  }
+
   clearAll(): void {
-    this.zplInput = '';
+    this.zplInput    = '';
     this.imageBase64 = '';
     this.errorMessage = '';
+    this.warnings    = [];
+    this.debugMode   = false;
   }
 
   downloadImage(): void {
     const link = document.createElement('a');
-    link.href = `data:image/png;base64,${this.imageBase64}`;
-    link.download = 'label.png';
+    link.href     = `data:image/png;base64,${this.imageBase64}`;
+    link.download = this.debugMode ? 'label-debug.png' : 'label.png';
     link.click();
   }
+
+  get warningCount(): number { return this.warnings.length; }
+  get outOfBoundsCount(): number { return this.warnings.filter(w => w.type === 'OUT_OF_BOUNDS').length; }
+  get overlapCount(): number { return this.warnings.filter(w => w.type === 'OVERLAP').length; }
 }
