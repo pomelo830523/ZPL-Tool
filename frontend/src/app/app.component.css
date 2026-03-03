@@ -389,10 +389,138 @@ textarea {
 }
 .ok-icon { font-size: 15px; font-weight: 700; }
 
+/* ═══════════════════════════════════════════════════════════════════
+   Tab Bar
+════════════════════════════════════════════════════════════════════ */
+.tab-bar {
+  display: flex;
+  gap: 0;
+  background: #e3f0ff;
+  border-bottom: 2px solid #1565c0;
+  padding: 0 32px;
+}
+
+.tab-btn {
+  padding: 10px 24px;
+  font-size: 14px;
+  font-weight: 500;
+  border: none;
+  background: transparent;
+  color: #555;
+  cursor: pointer;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -2px;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  font-family: inherit;
+}
+.tab-btn:hover { color: #1565c0; background: rgba(21, 101, 192, 0.06); }
+.tab-btn.active {
+  color: #1565c0;
+  border-bottom-color: #1565c0;
+  font-weight: 600;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   PNG → ZPL Drop Zone
+════════════════════════════════════════════════════════════════════ */
+.drop-zone {
+  margin: 16px 20px;
+  border: 2px dashed #c0cfe8;
+  border-radius: 10px;
+  min-height: 220px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  background: #fafcff;
+  overflow: hidden;
+}
+.drop-zone:hover { border-color: #1565c0; background: #f0f5ff; }
+.drop-zone.has-image { border-style: solid; border-color: #90b8e8; padding: 0; }
+
+.drop-hint {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: #90a8c8;
+  text-align: center;
+  padding: 24px;
+}
+.drop-hint p { margin: 0; font-size: 13px; color: #7090b0; }
+
+.drop-preview {
+  max-width: 100%;
+  max-height: 280px;
+  object-fit: contain;
+  border-radius: 8px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   PNG → ZPL Settings: tessdata path wider
+════════════════════════════════════════════════════════════════════ */
+.png-tess-item input {
+  min-width: 200px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   ZPL Result Textarea
+════════════════════════════════════════════════════════════════════ */
+.zpl-output-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 300px;
+}
+
+textarea.zpl-result {
+  flex: 1;
+  min-height: 300px;
+  resize: vertical;
+  background: #f8fafb;
+  border: none;
+  border-top: 1px solid #eeeeee;
+  color: #1a2a3a;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Detection Overlay Section
+════════════════════════════════════════════════════════════════════ */
+.overlay-section {
+  border-bottom: 1px solid #eeeeee;
+  padding: 12px 20px;
+  background: #fafafa;
+}
+
+.overlay-legend {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.legend-item {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 10px;
+  border-radius: 10px;
+}
+.legend-barcode { background: #b2f0f8; color: #006070; }
+.legend-shape   { background: #b8f0c8; color: #1a6030; }
+.legend-text    { background: #ffe0b0; color: #8a4000; }
+
+.overlay-wrapper {
+  max-height: 240px;
+  overflow: auto;
+}
+.overlay-wrapper img { max-width: 100%; height: auto; }
+
 /* ===== Responsive ===== */
 @media (max-width: 1000px) {
   .main-content { grid-template-columns: 1fr; padding: 16px; }
   .app-header   { padding: 16px 20px; }
+  .tab-bar      { padding: 0 16px; }
 }
 @media (max-width: 600px) {
   .settings { gap: 8px; }
@@ -400,4 +528,5 @@ textarea {
   .setting-item select { min-width: 75px; }
   .header-content h1 { font-size: 20px; }
   .debug-hint { display: none; }
+  .png-tess-item input { min-width: 140px; }
 }

@@ -1,25 +1,39 @@
-# ZPL Viewer
+# ZPL Tool
 
-一個全端 ZPL 標籤預覽工具，在瀏覽器中即時將 ZPL 代碼渲染為 PNG 圖片。
+ZPL ↔ PNG 雙向轉換工具，完全本地運行，不依賴任何雲端 API。
 
 - **Frontend**：Angular 17（standalone components）
 - **Backend**：Spring Boot 3.2 + Java 17
 - **ZPL 渲染**：Java AWT（文字／圖形）+ [ZXing](https://github.com/zxing/zxing)（條碼）
-- **完全本地**：不依賴任何雲端 API，可在離線環境使用
+- **OCR**：[Tess4J 5.8](https://github.com/nguyenq/tess4j)（Tesseract 5，選用）
 
 ---
 
 ## 功能
 
+### Tab 1 — ZPL → PNG
+
 | 功能 | 說明 |
 |------|------|
 | ZPL 渲染 | 支援常用 ZPL II 指令，即時預覽 PNG |
 | 多種條碼 | Code 128（`^BC`）、Code 39（`^B3`）、QR Code（`^BQ`） |
+| 點陣圖形 | `~DG`（存入印表機 RAM）+ `^XG`（呼叫回放） |
 | 標籤設定 | 可調整寬度、高度（英吋）與解析度（203 / 300 / 600 DPI） |
 | 問題偵測 | 自動偵測欄位**超出邊界**與**重疊**，附詳細說明 |
 | Debug 模式 | 一鍵切換：在圖片上標示問題區域（紅色＝超出、橘色＝重疊） |
 | 可調閾值 | 重疊判定閾值（dots）可自由設定，避免誤報 |
 | 下載 PNG | 支援下載一般圖片或 Debug 標註圖片 |
+
+### Tab 2 — PNG → ZPL
+
+| 功能 | 說明 |
+|------|------|
+| 條碼偵測 | ZXing 解碼 → `^BC` / `^B3` / `^BQ` |
+| 形狀偵測 | Connected Components + 矩形分類 → `^GB`（實心、空心、線條） |
+| 文字 OCR | Tess4J（需自備 tessdata）→ `^A0^FD` |
+| 殘留保真 | 未辨識像素編碼為 `~DG` hex + `^XG` 還原，確保不失真 |
+| 偵測預覽 | 彩色標注圖：青色＝條碼、綠色＝形狀、橘色＝文字 |
+| 一鍵送出 | 「送至 ZPL 預覽器」按鈕直接切換 Tab 並填入生成的 ZPL |
 
 ---
 
@@ -39,17 +53,22 @@ ZPLViewer/
 │   └── src/main/java/com/zplviewer/
 │       ├── ZplViewerApplication.java
 │       ├── config/WebConfig.java     # CORS 設定
-│       ├── controller/ZplController.java
+│       ├── controller/
+│       │   ├── ZplController.java    # POST /api/zpl/convert
+│       │   └── PngController.java    # POST /api/png/to-zpl
 │       ├── model/
-│       │   ├── ZplRequest.java       # 請求參數（含 debug、閾值）
-│       │   ├── ConvertResponse.java  # 回應（圖片 + 警告清單）
-│       │   └── RenderWarning.java    # 單一警告（含 BoundingBox）
+│       │   ├── ZplRequest.java
+│       │   ├── ConvertResponse.java
+│       │   ├── RenderWarning.java
+│       │   ├── PngToZplRequest.java  # image / threshold / minShapeDots / tessDataPath
+│       │   └── PngToZplResponse.java # zpl / previewImage
 │       └── service/
 │           ├── ZplService.java       # 協調渲染流程
-│           └── ZplRenderer.java      # 核心渲染器
+│           ├── ZplRenderer.java      # 核心渲染器（含 ~DG / ^XG）
+│           └── PngToZplService.java  # PNG→ZPL 分析引擎
 └── frontend/                         # Angular 17
     └── src/app/
-        ├── app.component.ts
+        ├── app.component.ts          # 雙頁籤元件邏輯
         ├── app.component.html
         └── app.component.css
 ```
@@ -88,9 +107,21 @@ npm start
 
 ---
 
+## OCR 設定（選用）
+
+文字偵測（PNG → ZPL）需要 Tesseract 語言資料：
+
+1. 下載 [`eng.traineddata`](https://github.com/tesseract-ocr/tessdata/raw/main/eng.traineddata)
+2. 放置於本機目錄，例如 `C:\tessdata\`
+3. 在「PNG → ZPL」頁籤的「tessdata 路徑」欄位填入該路徑
+
+> 若不填寫，OCR 步驟會被略過，文字區塊改由殘留 `~DG` 保留。
+
+---
+
 ## API
 
-### `POST /api/zpl/convert`
+### `POST /api/zpl/convert` — ZPL → PNG
 
 **Request body（JSON）：**
 
@@ -141,6 +172,35 @@ npm start
 }
 ```
 
+### `POST /api/png/to-zpl` — PNG → ZPL
+
+**Request body（JSON）：**
+
+```json
+{
+  "image": "<Base64 PNG 或 data URI>",
+  "threshold": 128,
+  "minShapeDots": 20,
+  "tessDataPath": "C:/tessdata"
+}
+```
+
+| 欄位 | 型別 | 預設 | 說明 |
+|------|------|------|------|
+| `image` | string | — | Base64 編碼的 PNG（可含 `data:image/png;base64,` 前綴） |
+| `threshold` | int | 128 | 灰階二值化閾值（0–255），低於此值視為黑色 |
+| `minShapeDots` | int | 20 | 形狀偵測最小面積（px），過濾雜訊 |
+| `tessDataPath` | string | `C:/tessdata` | Tesseract 語言資料目錄，留空則跳過 OCR |
+
+**Response body（JSON）：**
+
+```json
+{
+  "zpl": "~DGR:ZPLV0001.GRF,...\n^XA\n...\n^XZ\n",
+  "previewImage": "<Base64 PNG 偵測標注圖>"
+}
+```
+
 ---
 
 ## 支援的 ZPL 指令
@@ -157,6 +217,8 @@ npm start
 | `^B3{o},{h},{text}` | Code 39 條碼 |
 | `^BQ{o},{model},{mag}` | QR Code |
 | `^GB{w},{h},{thick},{color},{round}` | 圖形方框／線條 |
+| `~DG{name},{total},{bpr},{hex}` | 將點陣圖形存入印表機 RAM |
+| `^XG{name},{mx},{my}` | 呼叫已存入的點陣圖形 |
 | `^LH` / `^PW` / `^LL` | 標籤位置／寬度／長度（解析但不重設畫布） |
 
 ---

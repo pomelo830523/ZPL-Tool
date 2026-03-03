@@ -4,167 +4,307 @@
   <header class="app-header">
     <div class="header-content">
       <h1>ZPL Viewer</h1>
-      <p>輸入 ZPL 代碼並即時預覽標籤效果</p>
+      <p>ZPL ↔ PNG 雙向轉換工具</p>
     </div>
   </header>
 
-  <main class="main-content">
+  <!-- Tab Bar -->
+  <div class="tab-bar">
+    <button class="tab-btn" [class.active]="activeTab==='zpl'" (click)="activeTab='zpl'">
+      ZPL → PNG
+    </button>
+    <button class="tab-btn" [class.active]="activeTab==='png'" (click)="activeTab='png'">
+      PNG → ZPL
+    </button>
+  </div>
 
-    <!-- ══ Input Panel ══════════════════════════════════════════════ -->
-    <section class="panel input-panel">
-      <div class="panel-header">
-        <h2>ZPL 輸入</h2>
-        <div class="settings">
-          <div class="setting-item">
-            <label for="width">寬度 (英吋)</label>
-            <input id="width" type="number" [(ngModel)]="labelWidth" min="1" max="10" step="0.5">
-          </div>
-          <div class="setting-item">
-            <label for="height">高度 (英吋)</label>
-            <input id="height" type="number" [(ngModel)]="labelHeight" min="1" max="10" step="0.5">
-          </div>
-          <div class="setting-item">
-            <label for="dpmm">解析度</label>
-            <select id="dpmm" [(ngModel)]="dpmm">
-              <option [ngValue]="8">203 DPI</option>
-              <option [ngValue]="12">300 DPI</option>
-              <option [ngValue]="24">600 DPI</option>
-            </select>
-          </div>
-          <div class="setting-item">
-            <label for="threshold">重疊閾值 (dots)</label>
-            <input id="threshold" type="number" [(ngModel)]="overlapThresholdDots"
-                   min="0" max="100" step="1" title="兩個欄位的交集寬度與高度同時超過此值才視為重疊">
+  <!-- ══════════════════════════════════════════════════════════════════
+       Tab 1: ZPL → PNG
+  ══════════════════════════════════════════════════════════════════════ -->
+  @if (activeTab === 'zpl') {
+    <main class="main-content">
+
+      <!-- ══ Input Panel ══════════════════════════════════════════════ -->
+      <section class="panel input-panel">
+        <div class="panel-header">
+          <h2>ZPL 輸入</h2>
+          <div class="settings">
+            <div class="setting-item">
+              <label for="width">寬度 (英吋)</label>
+              <input id="width" type="number" [(ngModel)]="labelWidth" min="1" max="10" step="0.5">
+            </div>
+            <div class="setting-item">
+              <label for="height">高度 (英吋)</label>
+              <input id="height" type="number" [(ngModel)]="labelHeight" min="1" max="10" step="0.5">
+            </div>
+            <div class="setting-item">
+              <label for="dpmm">解析度</label>
+              <select id="dpmm" [(ngModel)]="dpmm">
+                <option [ngValue]="8">203 DPI</option>
+                <option [ngValue]="12">300 DPI</option>
+                <option [ngValue]="24">600 DPI</option>
+              </select>
+            </div>
+            <div class="setting-item">
+              <label for="threshold">重疊閾值 (dots)</label>
+              <input id="threshold" type="number" [(ngModel)]="overlapThresholdDots"
+                     min="0" max="100" step="1" title="兩個欄位的交集寬度與高度同時超過此值才視為重疊">
+            </div>
           </div>
         </div>
-      </div>
 
-      <textarea
-        [(ngModel)]="zplInput"
-        placeholder="在此輸入 ZPL 代碼...
+        <textarea
+          [(ngModel)]="zplInput"
+          placeholder="在此輸入 ZPL 代碼...
 範例:
 ^XA
 ^FO50,50^A0N,50,50^FDHello World^FS
 ^XZ"
-        spellcheck="false"
-      ></textarea>
+          spellcheck="false"
+        ></textarea>
 
-      <div class="button-group">
-        <button class="btn btn-primary" (click)="convertZpl()" [disabled]="isLoading">
+        <div class="button-group">
+          <button class="btn btn-primary" (click)="convertZpl()" [disabled]="isLoading">
+            @if (isLoading) {
+              <span class="btn-spinner"></span>
+              轉換中...
+            } @else {
+              轉換成圖片
+            }
+          </button>
+          <button class="btn btn-secondary" (click)="clearAll()" [disabled]="isLoading">
+            清除
+          </button>
+        </div>
+      </section>
+
+      <!-- ══ Output Panel ══════════════════════════════════════════════ -->
+      <section class="panel output-panel">
+        <div class="panel-header">
+          <h2>
+            預覽結果
+            @if (warningCount > 0) {
+              <span class="warning-badge-header" [class.has-error]="outOfBoundsCount > 0">
+                {{ warningCount }} 個問題
+              </span>
+            }
+          </h2>
+          <div class="header-actions">
+            @if (imageBase64) {
+              <button class="btn-debug" [class.active]="debugMode"
+                      (click)="toggleDebug()" [disabled]="isLoading"
+                      title="Debug 模式：在圖片上標示超出邊界（紅）與重疊（橘）區域">
+                {{ debugMode ? '一般檢視' : 'Debug 檢視' }}
+              </button>
+              <button class="btn-download" (click)="downloadImage()">
+                下載 PNG
+              </button>
+            }
+          </div>
+        </div>
+
+        <div class="preview-area">
           @if (isLoading) {
-            <span class="btn-spinner"></span>
-            轉換中...
+            <div class="state-container">
+              <div class="spinner-large"></div>
+              <p class="state-text">正在轉換中，請稍候...</p>
+            </div>
+          } @else if (errorMessage) {
+            <div class="state-container">
+              <div class="error-box">
+                <div class="error-icon">!</div>
+                <p>{{ errorMessage }}</p>
+              </div>
+            </div>
+          } @else if (imageBase64) {
+            <div class="image-wrapper">
+              <img [src]="'data:image/png;base64,' + imageBase64" alt="ZPL Label Preview">
+            </div>
           } @else {
-            轉換成圖片
-          }
-        </button>
-        <button class="btn btn-secondary" (click)="clearAll()" [disabled]="isLoading">
-          清除
-        </button>
-      </div>
-    </section>
-
-    <!-- ══ Output Panel ══════════════════════════════════════════════ -->
-    <section class="panel output-panel">
-      <div class="panel-header">
-        <h2>
-          預覽結果
-          @if (warningCount > 0) {
-            <span class="warning-badge-header" [class.has-error]="outOfBoundsCount > 0">
-              {{ warningCount }} 個問題
-            </span>
-          }
-        </h2>
-        <div class="header-actions">
-          @if (imageBase64) {
-            <button class="btn-debug" [class.active]="debugMode"
-                    (click)="toggleDebug()" [disabled]="isLoading"
-                    title="Debug 模式：在圖片上標示超出邊界（紅）與重疊（橘）區域">
-              {{ debugMode ? '一般檢視' : 'Debug 檢視' }}
-            </button>
-            <button class="btn-download" (click)="downloadImage()">
-              下載 PNG
-            </button>
+            <div class="state-container placeholder">
+              <div class="placeholder-icon">
+                <svg width="64" height="64" viewBox="0 0 24 24" fill="none"
+                     stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="3" width="18" height="18" rx="2"/>
+                  <line x1="3" y1="9" x2="21" y2="9"/>
+                  <line x1="9" y1="21" x2="9" y2="9"/>
+                </svg>
+              </div>
+              <p class="state-text">輸入 ZPL 代碼後點擊「轉換成圖片」</p>
+              <p class="state-subtext">支援所有標準 ZPL II 指令</p>
+            </div>
           }
         </div>
-      </div>
 
-      <!-- Preview image -->
-      <div class="preview-area">
-        @if (isLoading) {
-          <div class="state-container">
-            <div class="spinner-large"></div>
-            <p class="state-text">正在轉換中，請稍候...</p>
-          </div>
-        } @else if (errorMessage) {
-          <div class="state-container">
-            <div class="error-box">
-              <div class="error-icon">!</div>
-              <p>{{ errorMessage }}</p>
-            </div>
-          </div>
-        } @else if (imageBase64) {
-          <div class="image-wrapper">
-            <img [src]="'data:image/png;base64,' + imageBase64" alt="ZPL Label Preview">
-          </div>
-        } @else {
-          <div class="state-container placeholder">
-            <div class="placeholder-icon">
-              <svg width="64" height="64" viewBox="0 0 24 24" fill="none"
-                   stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="3" y="3" width="18" height="18" rx="2"/>
-                <line x1="3" y1="9" x2="21" y2="9"/>
-                <line x1="9" y1="21" x2="9" y2="9"/>
-              </svg>
-            </div>
-            <p class="state-text">輸入 ZPL 代碼後點擊「轉換成圖片」</p>
-            <p class="state-subtext">支援所有標準 ZPL II 指令</p>
-          </div>
-        }
-      </div>
-
-      <!-- Warnings panel -->
-      @if (imageBase64 && !isLoading) {
-        @if (warningCount > 0) {
-          <div class="warnings-panel">
-            <div class="warnings-summary">
-              <span class="warnings-title">偵測到 {{ warningCount }} 個問題</span>
-              <span class="warnings-chips">
-                @if (outOfBoundsCount > 0) {
-                  <span class="chip chip-oob">超出邊界 ×{{ outOfBoundsCount }}</span>
+        @if (imageBase64 && !isLoading) {
+          @if (warningCount > 0) {
+            <div class="warnings-panel">
+              <div class="warnings-summary">
+                <span class="warnings-title">偵測到 {{ warningCount }} 個問題</span>
+                <span class="warnings-chips">
+                  @if (outOfBoundsCount > 0) {
+                    <span class="chip chip-oob">超出邊界 ×{{ outOfBoundsCount }}</span>
+                  }
+                  @if (overlapCount > 0) {
+                    <span class="chip chip-overlap">重疊 ×{{ overlapCount }}</span>
+                  }
+                </span>
+                @if (debugMode) {
+                  <span class="debug-hint">Debug 標註已顯示於圖片中</span>
+                } @else {
+                  <span class="debug-hint">開啟「Debug 檢視」可在圖片上標示問題位置</span>
                 }
-                @if (overlapCount > 0) {
-                  <span class="chip chip-overlap">重疊 ×{{ overlapCount }}</span>
-                }
-              </span>
-              @if (debugMode) {
-                <span class="debug-hint">Debug 標註已顯示於圖片中</span>
-              } @else {
-                <span class="debug-hint">開啟「Debug 檢視」可在圖片上標示問題位置</span>
-              }
-            </div>
-            <div class="warnings-list">
-              @for (w of warnings; track $index) {
-                <div class="warning-item" [class.oob]="w.type === 'OUT_OF_BOUNDS'" [class.ov]="w.type === 'OVERLAP'">
-                  <span class="w-badge">{{ w.type === 'OUT_OF_BOUNDS' ? '超出邊界' : '重疊' }}</span>
-                  <div class="w-body">
-                    <div class="w-fields">
-                      {{ w.fieldA }}
-                      @if (w.fieldB) { <span class="w-sep">↔</span> {{ w.fieldB }} }
+              </div>
+              <div class="warnings-list">
+                @for (w of warnings; track $index) {
+                  <div class="warning-item" [class.oob]="w.type === 'OUT_OF_BOUNDS'" [class.ov]="w.type === 'OVERLAP'">
+                    <span class="w-badge">{{ w.type === 'OUT_OF_BOUNDS' ? '超出邊界' : '重疊' }}</span>
+                    <div class="w-body">
+                      <div class="w-fields">
+                        {{ w.fieldA }}
+                        @if (w.fieldB) { <span class="w-sep">↔</span> {{ w.fieldB }} }
+                      </div>
+                      <div class="w-detail">{{ w.detail }}</div>
                     </div>
-                    <div class="w-detail">{{ w.detail }}</div>
                   </div>
-                </div>
-              }
+                }
+              </div>
+            </div>
+          } @else {
+            <div class="warnings-ok">
+              <span class="ok-icon">✓</span> 未偵測到問題（閾值 {{ overlapThresholdDots }} dots）
+            </div>
+          }
+        }
+      </section>
+
+    </main>
+  }
+
+  <!-- ══════════════════════════════════════════════════════════════════
+       Tab 2: PNG → ZPL
+  ══════════════════════════════════════════════════════════════════════ -->
+  @if (activeTab === 'png') {
+    <main class="main-content">
+
+      <!-- ══ Upload Panel ═════════════════════════════════════════════ -->
+      <section class="panel input-panel">
+        <div class="panel-header">
+          <h2>PNG 輸入</h2>
+          <div class="settings">
+            <div class="setting-item">
+              <label for="pngThreshold">二值化閾值 (0-255)</label>
+              <input id="pngThreshold" type="number" [(ngModel)]="pngThreshold" min="0" max="255" step="1">
+            </div>
+            <div class="setting-item">
+              <label for="pngMinShape">最小形狀面積 (px)</label>
+              <input id="pngMinShape" type="number" [(ngModel)]="pngMinShapeDots" min="1" max="1000" step="1">
+            </div>
+            <div class="setting-item png-tess-item">
+              <label for="pngTessData">tessdata 路徑（留空跳過 OCR）</label>
+              <input id="pngTessData" type="text" [(ngModel)]="pngTessDataPath"
+                     placeholder="e.g. C:\tessdata">
             </div>
           </div>
-        } @else {
-          <div class="warnings-ok">
-            <span class="ok-icon">✓</span> 未偵測到問題（閾值 {{ overlapThresholdDots }} dots）
+        </div>
+
+        <!-- Drop zone -->
+        <div class="drop-zone"
+             (click)="pngFileInput.click()"
+             (drop)="onDrop($event)"
+             (dragover)="onDragOver($event)"
+             [class.has-image]="pngInputBase64">
+          @if (pngInputBase64) {
+            <img [src]="pngInputBase64" alt="Uploaded PNG" class="drop-preview">
+          } @else {
+            <div class="drop-hint">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none"
+                   stroke="currentColor" stroke-width="1.5">
+                <rect x="3" y="3" width="18" height="18" rx="2"/>
+                <polyline points="8 12 12 8 16 12"/>
+                <line x1="12" y1="8" x2="12" y2="16"/>
+              </svg>
+              <p>拖放 PNG 圖片至此，或點擊選取</p>
+              <p class="state-subtext">支援標籤圖片、截圖等 PNG 格式</p>
+            </div>
+          }
+        </div>
+        <input #pngFileInput type="file" accept="image/png,image/*"
+               style="display:none" (change)="onFileSelected($event)">
+
+        <div class="button-group">
+          <button class="btn btn-primary" (click)="convertPng()" [disabled]="pngIsLoading || !pngInputBase64">
+            @if (pngIsLoading) {
+              <span class="btn-spinner"></span>
+              分析中...
+            } @else {
+              轉換成 ZPL
+            }
+          </button>
+          <button class="btn btn-secondary" (click)="pngFileInput.click()" [disabled]="pngIsLoading">
+            選取圖片
+          </button>
+        </div>
+      </section>
+
+      <!-- ══ ZPL Output Panel ══════════════════════════════════════════ -->
+      <section class="panel output-panel">
+        <div class="panel-header">
+          <h2>生成 ZPL</h2>
+          <div class="header-actions">
+            @if (generatedZpl) {
+              <button class="btn-download" (click)="copyZpl()">複製 ZPL</button>
+              <button class="btn-debug active" (click)="sendToViewer()">送至 ZPL 預覽器</button>
+            }
+          </div>
+        </div>
+
+        <!-- Detection overlay -->
+        @if (pngOverlayBase64) {
+          <div class="overlay-section">
+            <div class="overlay-legend">
+              <span class="legend-item legend-barcode">條碼</span>
+              <span class="legend-item legend-shape">形狀 (^GB)</span>
+              <span class="legend-item legend-text">文字 (OCR)</span>
+            </div>
+            <div class="image-wrapper overlay-wrapper">
+              <img [src]="'data:image/png;base64,' + pngOverlayBase64" alt="Detection Overlay">
+            </div>
           </div>
         }
-      }
-    </section>
 
-  </main>
+        <div class="zpl-output-area">
+          @if (pngIsLoading) {
+            <div class="state-container">
+              <div class="spinner-large"></div>
+              <p class="state-text">正在分析圖片，請稍候...</p>
+            </div>
+          } @else if (pngError) {
+            <div class="state-container">
+              <div class="error-box">
+                <div class="error-icon">!</div>
+                <p>{{ pngError }}</p>
+              </div>
+            </div>
+          } @else if (generatedZpl) {
+            <textarea class="zpl-result" readonly [value]="generatedZpl" spellcheck="false"></textarea>
+          } @else {
+            <div class="state-container placeholder">
+              <div class="placeholder-icon">
+                <svg width="56" height="56" viewBox="0 0 24 24" fill="none"
+                     stroke="currentColor" stroke-width="1.5">
+                  <polyline points="16 18 22 12 16 6"/>
+                  <polyline points="8 6 2 12 8 18"/>
+                </svg>
+              </div>
+              <p class="state-text">上傳 PNG 後點擊「轉換成 ZPL」</p>
+              <p class="state-subtext">自動偵測條碼、形狀與文字（需 OCR）</p>
+            </div>
+          }
+        </div>
+      </section>
+
+    </main>
+  }
+
 </div>

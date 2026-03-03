@@ -16,6 +16,7 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.util.ArrayList;
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -54,6 +55,9 @@ public class ZplRenderer {
      */
     private record FieldRecord(int x, int y, int w, int h, String type, String label) {}
     private final List<FieldRecord> renderedFields = new ArrayList<>();
+
+    // ── Graphics store (~DG / ^XG) ───────────────────────────────────
+    private final Map<String, BufferedImage> graphicStore = new HashMap<>();
 
     // ── Graphics state ───────────────────────────────────────────────
     private BufferedImage image;
@@ -231,7 +235,18 @@ public class ZplRenderer {
         int i = 0;
         while (i < zpl.length()) {
             char c = zpl.charAt(i);
-            if (c == '~') { i++; continue; }          // skip ~ commands
+            if (c == '~') {
+                i++;
+                if (i + 2 <= zpl.length()) {
+                    String tcmd = zpl.substring(i, Math.min(i + 2, zpl.length())).toUpperCase();
+                    if ("DG".equals(tcmd)) {
+                        i = parseTildeDG(zpl, i + 2);
+                    } else {
+                        while (i < zpl.length() && zpl.charAt(i) != '^' && zpl.charAt(i) != '~') i++;
+                    }
+                }
+                continue;
+            }
             if (c != '^') { i++; continue; }
 
             i++;
@@ -305,6 +320,17 @@ public class ZplRenderer {
             }
 
             case "FS" -> { pendingBarcodeType = null; pendingBarcodeParams = null; }
+
+            case "XG" -> {
+                // params: "R:filename.GRF,magX,magY"
+                String filename = p[0].trim();
+                BufferedImage stored = graphicStore.get(filename);
+                if (stored != null) {
+                    g.drawImage(stored, fieldOriginX, fieldOriginY, null);
+                    renderedFields.add(new FieldRecord(fieldOriginX, fieldOriginY,
+                            stored.getWidth(), stored.getHeight(), "GRAPHIC", filename));
+                }
+            }
         }
     }
 
@@ -449,6 +475,86 @@ public class ZplRenderer {
 
         renderedFields.add(new FieldRecord(
                 fieldOriginX, fieldOriginY, width, height, "BOX", width + "×" + height));
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    //  ~DG parser: ~DGR:filename,totalBytes,bytesPerRow,hexData
+    // ─────────────────────────────────────────────────────────────────
+
+    /**
+     * Parse a ~DG command starting right after "DG" (i.e., at the first char of params).
+     * Returns the position after all consumed characters.
+     */
+    private int parseTildeDG(String zpl, int start) {
+        // Read until next ^ or ~ or end
+        int end = start;
+        // We need to read: R:filename,totalBytes,bytesPerRow,hexData
+        // hexData can be very long and may include newlines between rows
+        // Strategy: read comma-separated first 3 fields, then collect hex chars
+
+        int len = zpl.length();
+
+        // Skip to first comma after "R:filename"
+        int c1 = zpl.indexOf(',', start);
+        if (c1 < 0) return len;
+        String filename = zpl.substring(start, c1).trim();
+
+        int c2 = zpl.indexOf(',', c1 + 1);
+        if (c2 < 0) return len;
+        int totalBytes;
+        int bytesPerRow;
+        try {
+            totalBytes = Integer.parseInt(zpl.substring(c1 + 1, c2).trim());
+        } catch (NumberFormatException e) { return c2; }
+
+        int c3 = zpl.indexOf(',', c2 + 1);
+        if (c3 < 0) return len;
+        try {
+            bytesPerRow = Integer.parseInt(zpl.substring(c2 + 1, c3).trim());
+        } catch (NumberFormatException e) { return c3; }
+
+        // Collect exactly totalBytes*2 hex chars (skip whitespace/newlines)
+        int hexPos = c3 + 1;
+        int hexCharsNeeded = totalBytes * 2;
+        StringBuilder hexSb = new StringBuilder(hexCharsNeeded);
+        while (hexPos < len && hexSb.length() < hexCharsNeeded) {
+            char ch = zpl.charAt(hexPos);
+            if ((ch >= '0' && ch <= '9') || (ch >= 'A' && ch <= 'F') || (ch >= 'a' && ch <= 'f')) {
+                hexSb.append(ch);
+            }
+            hexPos++;
+        }
+
+        if (bytesPerRow <= 0 || totalBytes <= 0) return hexPos;
+
+        int height = totalBytes / bytesPerRow;
+        int width  = bytesPerRow * 8;
+
+        try {
+            BufferedImage img = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+            String hexData = hexSb.toString().toUpperCase();
+
+            for (int row = 0; row < height; row++) {
+                for (int bx = 0; bx < bytesPerRow; bx++) {
+                    int charIdx = (row * bytesPerRow + bx) * 2;
+                    if (charIdx + 2 > hexData.length()) break;
+                    int byteVal = Integer.parseInt(hexData.substring(charIdx, charIdx + 2), 16);
+                    for (int bit = 0; bit < 8; bit++) {
+                        int px = bx * 8 + bit;
+                        if (px < width) {
+                            boolean isBlack = (byteVal & (0x80 >> bit)) != 0;
+                            img.setRGB(px, row, isBlack ? java.awt.Color.BLACK.getRGB()
+                                                        : java.awt.Color.WHITE.getRGB());
+                        }
+                    }
+                }
+            }
+            graphicStore.put(filename, img);
+        } catch (Exception ignored) {
+            // Malformed hex data — skip
+        }
+
+        return hexPos;
     }
 
     // ─────────────────────────────────────────────────────────────────
