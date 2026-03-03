@@ -2,7 +2,7 @@
 
 ZPL ↔ PNG 雙向轉換工具，完全本地運行，不依賴任何雲端 API。
 
-- **Frontend**：Angular 17（standalone components）
+- **Frontend**：Angular 15（standalone components）
 - **Backend**：Spring Boot 3.2 + Java 17
 - **ZPL 渲染**：Java AWT（文字／圖形）+ [ZXing](https://github.com/zxing/zxing)（條碼）
 - **OCR**：[Tess4J 5.8](https://github.com/nguyenq/tess4j)（Tesseract 5，選用）
@@ -66,7 +66,7 @@ ZPLViewer/
 │           ├── ZplService.java       # 協調渲染流程
 │           ├── ZplRenderer.java      # 核心渲染器（含 ~DG / ^XG）
 │           └── PngToZplService.java  # PNG→ZPL 分析引擎
-└── frontend/                         # Angular 17
+└── frontend/                         # Angular 15
     └── src/app/
         ├── app.component.ts          # 雙頁籤元件邏輯
         ├── app.component.html
@@ -84,7 +84,7 @@ ZPLViewer/
 | Java | 17+ |
 | Maven | 3.8+ |
 | Node.js | 18+ |
-| Angular CLI | 17+ |
+| Angular CLI | 15+ |
 
 ### 啟動後端
 
