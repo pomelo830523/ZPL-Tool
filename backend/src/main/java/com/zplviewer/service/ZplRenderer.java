@@ -37,8 +37,13 @@ public class ZplRenderer {
     private int  fieldOriginY    = 0;
 
     // ── Font state ───────────────────────────────────────────────────
+    private char fontFace        = '0';  // '0' = CG Triumvirate (bold proportional); 'A'-'Z' = bitmap fonts
     private int  fontHeight      = 30;
+    private int  fontWidth       = 0;    // 0 = unspecified → use natural width
     private char fontOrientation = 'N';
+
+    // ── Field modifiers ──────────────────────────────────────────────
+    private boolean fieldReverse = false;  // ^FR: invert foreground/background
 
     // ── Barcode defaults (^BY) ───────────────────────────────────────
     private int  barcodeModuleWidth = 2;
@@ -294,11 +299,29 @@ public class ZplRenderer {
             case "FO" -> { fieldOriginX = intAt(p, 0, 0);          fieldOriginY = intAt(p, 1, 0); }
             case "FT" -> { fieldOriginX = intAt(p, 0, fieldOriginX); fieldOriginY = intAt(p, 1, fieldOriginY); }
 
-            case "A0","A1","A2","A3","A4","A5","A6","A7","A8","A9" -> {
+            // ^A0 = CG Triumvirate（scalable, bold proportional）
+            case "A0" -> {
+                fontFace = '0';
                 if (p.length > 0 && !p[0].isEmpty()) fontOrientation = p[0].toUpperCase().charAt(0);
                 fontHeight = intAt(p, 1, fontHeight);
+                fontWidth  = intAt(p, 2, 0);
             }
-            case "CF" -> fontHeight = intAt(p, 1, fontHeight);
+            // ^AA – ^AZ = bitmap fonts A-Z（monospaced style）
+            case "AA","AB","AC","AD","AE","AF","AG","AH","AI","AJ","AK","AL","AM",
+                 "AN","AO","AP","AQ","AR","AS","AT","AU","AV","AW","AX","AY","AZ",
+                 "A1","A2","A3","A4","A5","A6","A7","A8","A9" -> {
+                fontFace = cmd.charAt(1);
+                if (p.length > 0 && !p[0].isEmpty()) fontOrientation = p[0].toUpperCase().charAt(0);
+                fontHeight = intAt(p, 1, fontHeight);
+                fontWidth  = intAt(p, 2, 0);
+            }
+            // ^CFf,h = change default font (f = font id, h = height)
+            case "CF" -> {
+                if (p.length > 0 && !p[0].isEmpty()) fontFace = p[0].toUpperCase().charAt(0);
+                fontHeight = intAt(p, 1, fontHeight);
+            }
+            // ^FR = Field Reverse（次個欄位前景/背景互換）
+            case "FR" -> fieldReverse = true;
 
             case "BY" -> {
                 barcodeModuleWidth = intAt(p, 0, barcodeModuleWidth);
@@ -316,10 +339,20 @@ public class ZplRenderer {
                 int h     = intAt(p, 1, 1);
                 int thick = intAt(p, 2, 1);
                 Color col = (p.length > 3 && "W".equalsIgnoreCase(p[3].trim())) ? Color.WHITE : Color.BLACK;
-                drawBox(w, h, thick, col, intAt(p, 4, 0));
+                if (fieldReverse) {
+                    // ^FR: XOR-invert the drawing area (Black on Black→White, Black on White→Black).
+                    // This is the correct ZPL "reverse dots" behavior (e.g. logo nested squares).
+                    g.setColor(Color.BLACK);
+                    g.setXORMode(Color.WHITE);
+                    drawBox(w, h, thick, Color.BLACK, intAt(p, 4, 0));
+                    g.setPaintMode();
+                } else {
+                    drawBox(w, h, thick, col, intAt(p, 4, 0));
+                }
+                fieldReverse = false;
             }
 
-            case "FS" -> { pendingBarcodeType = null; pendingBarcodeParams = null; }
+            case "FS" -> { pendingBarcodeType = null; pendingBarcodeParams = null; fieldReverse = false; }
 
             case "XG" -> {
                 // params: "R:filename.GRF,magX,magY"
@@ -336,7 +369,8 @@ public class ZplRenderer {
 
     private void resetState() {
         fieldOriginX = 0; fieldOriginY = 0;
-        fontHeight = 30;  fontOrientation = 'N';
+        fontFace = '0';  fontHeight = 30;  fontWidth = 0;  fontOrientation = 'N';
+        fieldReverse = false;
         barcodeModuleWidth = 2; barcodeHeight = 100;
         pendingBarcodeType = null; pendingBarcodeParams = null;
     }
@@ -354,36 +388,69 @@ public class ZplRenderer {
         }
         pendingBarcodeType   = null;
         pendingBarcodeParams = null;
+        fieldReverse         = false;
     }
 
     // ── Text ─────────────────────────────────────────────────────────
 
     private void renderText(String text) {
         int fh = Math.max(fontHeight, 8);
-        g.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, fh));
-        g.setColor(Color.BLACK);
+        String fontName  = (fontFace == '0') ? Font.SANS_SERIF : Font.MONOSPACED;
+        int    fontStyle = (fontFace == '0') ? Font.BOLD : Font.PLAIN;
+
+        Font font = new Font(fontName, fontStyle, fh);
+        g.setFont(font);
         FontMetrics fm = g.getFontMetrics();
 
-        int textW = fm.stringWidth(text);
-        int textH = fm.getHeight();
+        // capHpx: actual visual height of uppercase 'H' at this em-size, measured directly.
+        // Baseline = fieldOriginY + capHpx  →  top of caps aligns with fieldOriginY.
+        int capHpx = (int) Math.round(
+                font.createGlyphVector(g.getFontRenderContext(), "H")
+                    .getVisualBounds().getHeight());
 
-        // 記錄 BoundingBox（以正常方向計算；旋轉時 w/h 互換，保守處理）
+        // Horizontal scale:
+        //   explicit ^A0/^CF width → use as-is
+        //   Font 0 default        → Java SANS_SERIF Bold (Arial) is ~20% wider than
+        //                           ZPL Font 0 (CG Triumvirate Bold); apply correction
+        //   Font A-Z default      → natural monospaced width
+        double xScale;
+        if (fontWidth > 0) {
+            xScale = (double) fontWidth / fontHeight;
+        } else if (fontFace == '0') {
+            xScale = 0.82;
+        } else {
+            xScale = 1.0;
+        }
+
+        int naturalW = fm.stringWidth(text);
+        int textW    = (int) Math.round(naturalW * xScale);
+        int textH    = (int) Math.round(fh * 0.8);;   // ZPL h = cap height; use fh as field height, not fm.getHeight()
+
+        // BoundingBox（旋轉時 w/h 互換）
         int recW = (fontOrientation == 'R' || fontOrientation == 'B') ? textH : textW;
         int recH = (fontOrientation == 'R' || fontOrientation == 'B') ? textW : textH;
         renderedFields.add(new FieldRecord(fieldOriginX, fieldOriginY, recW, recH,
                 "TEXT", truncate(text, 25)));
 
+        g.setColor(fieldReverse ? Color.WHITE : Color.BLACK);
+
         AffineTransform saved = g.getTransform();
         switch (fontOrientation) {
-            case 'R' -> { g.translate(fieldOriginX + fh, fieldOriginY); g.rotate(Math.PI / 2); }
-            case 'I' -> { g.translate(fieldOriginX + textW, fieldOriginY + fh); g.rotate(Math.PI); }
-            case 'B' -> { g.translate(fieldOriginX, fieldOriginY + textW); g.rotate(-Math.PI / 2); }
-            default  -> {}
+            case 'N' -> {
+                if (xScale != 1.0) {
+                    g.translate(fieldOriginX, 0);
+                    g.scale(xScale, 1.0);
+                    g.drawString(text, 0, fieldOriginY + capHpx);
+                } else {
+                    g.drawString(text, fieldOriginX, fieldOriginY + capHpx);
+                }
+            }
+            case 'R' -> { g.translate(fieldOriginX + fh,    fieldOriginY);         g.rotate( Math.PI / 2); g.drawString(text, 0, capHpx); }
+            case 'I' -> { g.translate(fieldOriginX + textW, fieldOriginY + fh);    g.rotate( Math.PI);     g.drawString(text, 0, capHpx); }
+            case 'B' -> { g.translate(fieldOriginX,         fieldOriginY + textW); g.rotate(-Math.PI / 2); g.drawString(text, 0, capHpx); }
         }
-        int drawX = (fontOrientation == 'N') ? fieldOriginX : 0;
-        int drawY = (fontOrientation == 'N') ? fieldOriginY + fm.getAscent() : fm.getAscent();
-        g.drawString(text, drawX, drawY);
         g.setTransform(saved);
+        fieldReverse = false;
     }
 
     // ── Barcode routing ───────────────────────────────────────────────
@@ -401,20 +468,26 @@ public class ZplRenderer {
     private void renderCode128(String data) throws Exception {
         int bh        = intAt(pendingBarcodeParams, 1, barcodeHeight);
         boolean print = !"N".equalsIgnoreCase(safeGet(pendingBarcodeParams, 2, "Y"));
-        int textExtra = print ? (Math.max(14, barcodeModuleWidth * 3) + 4) : 0;
-
-        int estWidth = Math.max((data.length() * 11 + 45) * barcodeModuleWidth, 100);
+        int hriSize   = Math.max(18, barcodeModuleWidth * 10);
+        int textExtra = print ? (hriSize + 4) : 0;
 
         Map<EncodeHintType, Object> hints = new EnumMap<>(EncodeHintType.class);
         hints.put(EncodeHintType.MARGIN, 0);
-        BitMatrix matrix  = new Code128Writer().encode(data, BarcodeFormat.CODE_128, estWidth, bh, hints);
+        // ZPL ^BC default mode = Code128-B (Zebra/Labelary never auto-switch to C).
+        hints.put(EncodeHintType.FORCE_CODE_SET, "B");
+
+        // Two-step: encode at width=1 → ZXing scale=1 → matrix.getWidth() = exact module count.
+        // Then re-encode at moduleCount × barcodeModuleWidth for pixel-perfect bar widths.
+        int moduleCount = new Code128Writer().encode(data, BarcodeFormat.CODE_128, 1, 1, hints).getWidth();
+        int barcodeW    = moduleCount * barcodeModuleWidth;
+        BitMatrix matrix  = new Code128Writer().encode(data, BarcodeFormat.CODE_128, barcodeW, bh, hints);
         BufferedImage bar = MatrixToImageWriter.toBufferedImage(matrix);
 
         g.drawImage(bar, fieldOriginX, fieldOriginY, null);
 
         if (print) {
-            int textSize = Math.max(14, barcodeModuleWidth * 3);
-            g.setFont(new Font(Font.MONOSPACED, Font.PLAIN, textSize));
+            // HRI font: SANS_SERIF (proportional), matching real Zebra printer output
+            g.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, hriSize));
             FontMetrics fm = g.getFontMetrics();
             g.setColor(Color.BLACK);
             int tx = fieldOriginX + (bar.getWidth() - fm.stringWidth(data)) / 2;
@@ -427,11 +500,14 @@ public class ZplRenderer {
 
     private void renderCode39(String data) throws Exception {
         int bh = intAt(pendingBarcodeParams, 1, barcodeHeight);
-        int estWidth = Math.max((data.length() * 16 + 30) * barcodeModuleWidth, 100);
 
         Map<EncodeHintType, Object> hints = new EnumMap<>(EncodeHintType.class);
         hints.put(EncodeHintType.MARGIN, 0);
-        BitMatrix matrix  = new Code39Writer().encode(data, BarcodeFormat.CODE_39, estWidth, bh, hints);
+
+        // Two-step for exact module width
+        int moduleCount = new Code39Writer().encode(data, BarcodeFormat.CODE_39, 1, 1, hints).getWidth();
+        int barcodeW    = moduleCount * barcodeModuleWidth;
+        BitMatrix matrix  = new Code39Writer().encode(data, BarcodeFormat.CODE_39, barcodeW, bh, hints);
         BufferedImage bar = MatrixToImageWriter.toBufferedImage(matrix);
 
         g.drawImage(bar, fieldOriginX, fieldOriginY, null);
