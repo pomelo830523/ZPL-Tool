@@ -211,21 +211,21 @@ public class ZplRenderer {
         CG_WIDTHS.put('S', 0.4333f);  CG_WIDTHS.put('T', 0.4333f);
         CG_WIDTHS.put('U', 0.4667f);  CG_WIDTHS.put('V', 0.4333f);
         CG_WIDTHS.put('W', 0.6333f);  CG_WIDTHS.put('X', 0.4333f);
-        CG_WIDTHS.put('Y', 0.4667f);  CG_WIDTHS.put('Z', 0.5000f);
+        CG_WIDTHS.put('Y', 0.4667f);  CG_WIDTHS.put('Z', 0.4333f);
         // ── 小寫 a–z ──────────────────────────────
         CG_WIDTHS.put('a', 0.4000f);  CG_WIDTHS.put('b', 0.3667f);
         CG_WIDTHS.put('c', 0.3667f);  CG_WIDTHS.put('d', 0.3667f);
-        CG_WIDTHS.put('e', 0.4000f);  CG_WIDTHS.put('f', 0.2333f);
+        CG_WIDTHS.put('e', 0.4000f);  CG_WIDTHS.put('f', 0.2667f);
         CG_WIDTHS.put('g', 0.4000f);  CG_WIDTHS.put('h', 0.4000f);
         CG_WIDTHS.put('i', 0.2667f);  CG_WIDTHS.put('j', 0.2667f);
-        CG_WIDTHS.put('k', 0.3333f);  CG_WIDTHS.put('l', 0.2000f);
+        CG_WIDTHS.put('k', 0.3667f);  CG_WIDTHS.put('l', 0.2000f);
         CG_WIDTHS.put('m', 0.6333f);  CG_WIDTHS.put('n', 0.4333f);
         CG_WIDTHS.put('o', 0.4333f);  CG_WIDTHS.put('p', 0.4000f);
         CG_WIDTHS.put('q', 0.4000f);  CG_WIDTHS.put('r', 0.3333f);
         CG_WIDTHS.put('s', 0.3333f);  CG_WIDTHS.put('t', 0.2667f);
         CG_WIDTHS.put('u', 0.3667f);  CG_WIDTHS.put('v', 0.3333f);
         CG_WIDTHS.put('w', 0.5333f);  CG_WIDTHS.put('x', 0.3667f);
-        CG_WIDTHS.put('y', 0.3333f);  CG_WIDTHS.put('z', 0.4333f);
+        CG_WIDTHS.put('y', 0.3333f);  CG_WIDTHS.put('z', 0.4000f);
         // ── 數字 0–9 ──────────────────────────────
         CG_WIDTHS.put('0', 0.4333f);  CG_WIDTHS.put('1', 0.3333f);
         CG_WIDTHS.put('2', 0.4000f);  CG_WIDTHS.put('3', 0.3667f);
@@ -299,6 +299,7 @@ public class ZplRenderer {
      * - 藍色實線：標籤邊界
      * - 紅色虛線框 + 半透明紅填色：超出邊界的欄位（取可見部分）
      * - 橘色虛線框 + 半透明橘填色：重疊欄位對 + 交集區
+     * - 藍色虛線框 + 半透明藍填色：條碼間距不足的欄位對及其間距區
      */
     public void applyDebugOverlay(List<RenderWarning> warnings) {
         Stroke dashed = new BasicStroke(2, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER,
@@ -710,8 +711,9 @@ public class ZplRenderer {
         BufferedImage qr = MatrixToImageWriter.toBufferedImage(matrix);
 
         g.drawImage(qr, fieldOriginX, fieldOriginY, null);
+        int[] cb = matrixContentBounds(matrix);
         renderedFields.add(new FieldRecord(
-                fieldOriginX, fieldOriginY, qr.getWidth(), qr.getHeight(), "QRCODE", truncate(data, 20)));
+                fieldOriginX + cb[0], fieldOriginY + cb[1], cb[2], cb[3], "QRCODE", truncate(data, 20)));
     }
 
     private void renderDataMatrix(String data) throws Exception {
@@ -725,8 +727,27 @@ public class ZplRenderer {
         BufferedImage dm = MatrixToImageWriter.toBufferedImage(matrix);
 
         g.drawImage(dm, fieldOriginX, fieldOriginY, null);
+        int[] cb = matrixContentBounds(matrix);
         renderedFields.add(new FieldRecord(
-                fieldOriginX, fieldOriginY, dm.getWidth(), dm.getHeight(), "DATAMATRIX", truncate(data, 20)));
+                fieldOriginX + cb[0], fieldOriginY + cb[1], cb[2], cb[3], "DATAMATRIX", truncate(data, 20)));
+    }
+
+    /** 掃描 BitMatrix，回傳 [x, y, w, h]，即包含所有 set bit 的最小矩形（pixel 單位）。
+     *  若 matrix 全空，則回傳整張圖大小。 */
+    private static int[] matrixContentBounds(BitMatrix matrix) {
+        int minX = matrix.getWidth(), maxX = -1, minY = matrix.getHeight(), maxY = -1;
+        for (int y = 0; y < matrix.getHeight(); y++) {
+            for (int x = 0; x < matrix.getWidth(); x++) {
+                if (matrix.get(x, y)) {
+                    if (x < minX) minX = x;
+                    if (x > maxX) maxX = x;
+                    if (y < minY) minY = y;
+                    if (y > maxY) maxY = y;
+                }
+            }
+        }
+        if (maxX == -1) return new int[]{0, 0, matrix.getWidth(), matrix.getHeight()};
+        return new int[]{minX, minY, maxX - minX + 1, maxY - minY + 1};
     }
 
     // ── Graphic Box ───────────────────────────────────────────────────

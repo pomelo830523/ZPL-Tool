@@ -79,19 +79,19 @@ export class AppComponent {
 ^BCN,80,N,N,N^FDHELLO128^FS
 ^FO120,430^A0N,14,12^FDCode-128^FS
 
-^FO360,340^BY2
+^FO320,340^BY2
 ^B3N,80,Y,N^FDHELLO39^FS
-^FO450,430^A0N,14,12^FDCode-39^FS
+^FO410,430^A0N,14,12^FDCode-39^FS
 
-^FO705,350
+^FO580,355
 ^BQN,2,4
 ^FDLA,https://example.com^FS
-^FO720,430^A0N,14,12^FDQR Code^FS
+^FO600,430^A0N,14,12^FDQR Code^FS
 
-^FO920,320
+^FO680,330
 ^BXN,100,100
 ^FD Data Matrix https://example.com Data Matrix https://example.com Data Matrix https://example.com Data Matrix https://example.com^FS
-^FO940,430^A0N,14,12^FDDataMatrix^FS
+^FO700,430^A0N,14,12^FDDataMatrix^FS
 
 ^FO30,460^GB1150,2,2^FS
 
@@ -108,25 +108,40 @@ export class AppComponent {
 ^FO540,490^BY2
 ^B3N,80,Y,N^FDBBB^FS
 
-^FO780,470
+^FO770,505
 ^BQN,2,4
 ^FDLA,https://example.com^FS
-^FO850,490
+^FO740,530^A0N,34,28^FDAAA^FS
+
+^FO940,480
 ^BXN,100,100
 ^FD Data Matrix https://example.com Data Matrix https://example.com Data Matrix https://example.com Data Matrix https://example.com^FS
+^FO910,550^GB150,4,4^FS
 
 ^FO30,600^GB1150,2,2^FS
 
 ^FO30,610^A0N,22,18^FD - Check Out Of Bounds - ^FS
-^FO0,640^A0N,40,33^FDOOB!^FS
+^FO0,635^A0N,40,33^FDOOB!^FS
 
-^FO30,690^GB1150,2,2^FS
+^FO1150,602
+^BQN,2,4
+^FDLA,https://example.com^FS
+
+^FO30,675^GB1150,2,2^FS
 
 ^FO30,700^A0N,22,18^FD - Check Barcode Gap - ^FS
 ^FO300,700^BY2
 ^B3N,80,Y,N^FDHELLO39^FS
-^FO550,700^BY2
+^FO560,700^BY2
 ^B3N,80,Y,N^FDHELLO39^FS
+
+^FO840,700
+^BQN,2,4
+^FDLA,https://example.com^FS
+^FO930,685
+^BXN,100,100
+^FD Data Matrix https://example.com Data Matrix https://example.com Data Matrix https://example.com Data Matrix https://example.com^FS
+
 ^XZ`;
 
   imageBase64   = '';
