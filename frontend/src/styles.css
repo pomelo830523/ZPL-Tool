@@ -9,3 +9,15 @@ body {
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   min-height: 100vh;
 }
+
+/* ── ZPL Syntax Highlight colours ─────────────────────────────────────────
+   Must be global (not component-scoped) because [innerHTML] inserts raw DOM
+   that does not receive Angular's view-encapsulation attribute.            */
+.hl-label { color: #f38ba8; font-weight: bold; }   /* ^XA ^XZ  — red     */
+.hl-cmd   { color: #89dceb; }                       /* ^XX       — cyan   */
+.hl-tilde { color: #cba6f7; }                       /* ~XX       — purple */
+.hl-fd    { color: #89b4fa; }                       /* ^FD ^FS  — blue    */
+.hl-str   { color: #a6e3a1; }                       /* field data — green */
+.hl-param { color: #cdd6f4; }                       /* params    — grey   */
+.hl-num   { color: #fab387; }                       /* numbers   — peach  */
+.hl-dg    { color: #585b70; }                       /* ~DG data  — muted  */

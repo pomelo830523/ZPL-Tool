@@ -116,7 +116,58 @@
   box-shadow: 0 0 0 2px rgba(21, 101, 192, 0.15);
 }
 
-/* ===== Textarea ===== */
+/* ===== ZPL Editor (syntax highlight overlay) ===== */
+.editor-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 420px;
+  background: #1e1e2e;
+  resize: vertical;
+  overflow: hidden;
+}
+
+.highlight-layer,
+.editor-layer {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  padding: 16px;
+  font-family: 'Courier New', 'Consolas', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  box-sizing: border-box;
+  white-space: pre;   /* 不自動換行，避免捲動條寬度差異造成行號錯位 */
+  tab-size: 2;
+  margin: 0;
+  border: 0;
+  letter-spacing: normal;
+}
+
+.highlight-layer {
+  color: #cdd6f4;
+  background: transparent;
+  pointer-events: none;
+  overflow: hidden;   /* 橫向與縱向捲動均由 JS 從 textarea 同步 */
+  z-index: 1;
+  /* padding-bottom 加大，以避免水平捲軸縮短 textarea clientHeight 後
+     div.maxScrollTop < textarea.maxScrollTop 造成 scrollTop 被 clamp，
+     導致最底部有一行偏移。Windows 捲軸高度約 17px，加 24px 緩衝即可。 */
+  padding-bottom: 40px;
+}
+
+.editor-layer {
+  color: transparent;
+  caret-color: #cdd6f4;
+  background: transparent;
+  outline: none;
+  resize: none;
+  overflow: auto;
+  z-index: 2;
+}
+
+/* .hl-* 顏色規則移至 styles.css（全域），以避免 Angular view encapsulation 造成 [innerHTML] 失效 */
+
+/* ===== Textarea (PNG→ZPL output only) ===== */
 textarea {
   width: 100%;
   padding: 16px;
@@ -322,6 +373,7 @@ textarea {
   padding: 2px 8px;
   border-radius: 10px;
 }
+.chip-syntax  { background: #f3e5f5; color: #6a1b9a; }
 .chip-oob     { background: #ffcdd2; color: #b71c1c; }
 .chip-overlap { background: #ffe0b2; color: #e65100; }
 .chip-gap     { background: #e8eaf6; color: #283593; }
@@ -348,6 +400,7 @@ textarea {
   font-size: 12px;
   border-left: 3px solid transparent;
 }
+.warning-item.syn { background: #f3e5f5; border-left-color: #8e24aa; }
 .warning-item.oob { background: #ffebee; border-left-color: #e53935; }
 .warning-item.ov  { background: #fff3e0; border-left-color: #fb8c00; }
 .warning-item.gap { background: #e8eaf6; border-left-color: #3f51b5; }
@@ -360,6 +413,7 @@ textarea {
   border-radius: 3px;
   margin-top: 1px;
 }
+.syn .w-badge { background: #8e24aa; color: white; }
 .oob .w-badge { background: #e53935; color: white; }
 .ov  .w-badge { background: #fb8c00; color: white; }
 .gap .w-badge { background: #3f51b5; color: white; }

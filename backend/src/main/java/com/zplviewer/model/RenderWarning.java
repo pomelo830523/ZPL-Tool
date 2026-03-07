@@ -5,8 +5,14 @@ package com.zplviewer.model;
  */
 public class RenderWarning {
 
-    /** "OUT_OF_BOUNDS" | "OVERLAP" | "BARCODE_GAP" */
+    /** "OUT_OF_BOUNDS" | "OVERLAP" | "BARCODE_GAP" | "SYNTAX" */
     private String type;
+
+    /** 指令名稱，例如 "GB"、"GF"（僅 SYNTAX 使用） */
+    private String command;
+
+    /** ZPL 原始碼中的行號（僅 SYNTAX 使用） */
+    private int line;
 
     /** 第一個欄位的描述，例如 "CODE128: 123456789" */
     private String fieldA;
@@ -36,6 +42,12 @@ public class RenderWarning {
 
     public String getType()    { return type; }
     public void setType(String type) { this.type = type; }
+
+    public String getCommand() { return command; }
+    public void setCommand(String command) { this.command = command; }
+
+    public int getLine() { return line; }
+    public void setLine(int line) { this.line = line; }
 
     public String getFieldA()  { return fieldA; }
     public void setFieldA(String fieldA) { this.fieldA = fieldA; }

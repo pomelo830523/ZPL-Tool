@@ -57,11 +57,19 @@
         </div>
       </div>
 
-      <textarea
-        [(ngModel)]="zplInput"
-        placeholder="在此輸入 ZPL 代碼..."
-        spellcheck="false"
-      ></textarea>
+      <div class="editor-wrap">
+        <div class="highlight-layer" [innerHTML]="highlightedZpl"></div>
+        <textarea
+          class="editor-layer"
+          [(ngModel)]="zplInput"
+          wrap="off"
+          placeholder="在此輸入 ZPL 代碼..."
+          spellcheck="false"
+          autocomplete="off"
+          (input)="onZplInput($event)"
+          (scroll)="onEditorScroll($event)"
+        ></textarea>
+      </div>
 
       <div class="button-group">
         <button class="btn btn-primary" (click)="convertZpl()" [disabled]="isLoading">
@@ -134,6 +142,7 @@
           <div class="warnings-summary">
             <span class="warnings-title">偵測到 {{ warningCount }} 個問題</span>
             <span class="warnings-chips">
+              <span class="chip chip-syntax" *ngIf="syntaxCount > 0">語法 ×{{ syntaxCount }}</span>
               <span class="chip chip-oob" *ngIf="outOfBoundsCount > 0">超出邊界 ×{{ outOfBoundsCount }}</span>
               <span class="chip chip-overlap" *ngIf="overlapCount > 0">重疊 ×{{ overlapCount }}</span>
               <span class="chip chip-gap" *ngIf="barcodeGapCount > 0">條碼間距 ×{{ barcodeGapCount }}</span>
@@ -145,10 +154,12 @@
             <div class="warning-item" *ngFor="let w of warnings"
                  [class.oob]="w.type === 'OUT_OF_BOUNDS'"
                  [class.ov]="w.type === 'OVERLAP'"
-                 [class.gap]="w.type === 'BARCODE_GAP'">
+                 [class.gap]="w.type === 'BARCODE_GAP'"
+                 [class.syn]="w.type === 'SYNTAX'">
               <span class="w-badge">{{
                 w.type === 'OUT_OF_BOUNDS' ? '超出邊界' :
-                w.type === 'OVERLAP'       ? '重疊' : '條碼間距'
+                w.type === 'OVERLAP'       ? '重疊' :
+                w.type === 'BARCODE_GAP'   ? '條碼間距' : '語法'
               }}</span>
               <div class="w-body">
                 <div class="w-fields">

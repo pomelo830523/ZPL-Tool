@@ -74,6 +74,33 @@ public class ZplRenderer {
     // ── Embedded font (^A0 / Font 0 = CG Triumvirate) ────────────────
     private final Font cgFont;
 
+    // ── Syntax warning collection ─────────────────────────────────────
+    private final List<RenderWarning> syntaxWarnings = new ArrayList<>();
+    private int currentLine = 1;
+    private final java.util.Set<String> warnedCmds = new java.util.HashSet<>();
+
+    /** ZPL 指令中可安全忽略（不影響渲染）的指令集合。 */
+    private static final java.util.Set<String> KNOWN_SILENT_CMDS = java.util.Set.of(
+        "LH","PW","LL","CI","PQ","JN","JZ","LS","LT","PM","PO","PR",
+        "MN","MT","MM","MD","MF","FP","HV","HH","SN","LR","SP","CC","CD",
+        "ZZ","SZ","FN","ZD","JA","JB","JC","JD","JE","JF","JG","JH","JI",
+        "JJ","JK","JL","JM","JO","JP","JQ","JR","JS","JT","JU","JV","JW",
+        "JX","JY","MC","ML","MG","HL","IL","ID","KD","KV","LA","LF","LO","LP",
+        "FV","DF","QA","QE","QI","QQ","QR"
+    );
+
+    /** 不支援但常見、會影響渲染的指令及其說明。 */
+    private static final java.util.Map<String, String> UNSUPPORTED_CMD_MSGS;
+    static {
+        UNSUPPORTED_CMD_MSGS = new java.util.HashMap<>();
+        UNSUPPORTED_CMD_MSGS.put("GF", "內嵌點陣圖形（^GF），圖形將不顯示");
+        UNSUPPORTED_CMD_MSGS.put("FH", "Hex 欄位資料編碼（^FH），特殊字元可能顯示錯誤");
+        UNSUPPORTED_CMD_MSGS.put("GC", "繪製圓形（^GC），將被略過");
+        UNSUPPORTED_CMD_MSGS.put("GD", "繪製對角線（^GD），將被略過");
+        UNSUPPORTED_CMD_MSGS.put("GE", "繪製橢圓形（^GE），將被略過");
+        UNSUPPORTED_CMD_MSGS.put("GS", "更改字型大小（^GS），將被略過");
+    }
+
     // ── Graphics state ───────────────────────────────────────────────
     private BufferedImage image;
     private Graphics2D    g;
@@ -119,9 +146,33 @@ public class ZplRenderer {
      *
      * @param overlapThresholdMm 重疊閾值（mm）：交集的寬 AND 高都超過此值才視為重疊
      */
+    /** 加入一個語法警告（參數錯誤類，不做 dedup）。 */
+    private void addSyntaxWarn(String cmd, String detail) {
+        RenderWarning w = new RenderWarning();
+        w.setType("SYNTAX");
+        w.setCommand(cmd);
+        w.setLine(currentLine);
+        w.setFieldA("^" + cmd + "（第 " + currentLine + " 行）");
+        w.setDetail(detail);
+        syntaxWarnings.add(w);
+    }
+
+    /** 加入一個未知/不支援指令警告（以指令名稱 dedup）。 */
+    private void addUnknownCmdWarn(String cmd, String detail) {
+        if (warnedCmds.add(cmd)) {
+            RenderWarning w = new RenderWarning();
+            w.setType("SYNTAX");
+            w.setCommand(cmd);
+            w.setLine(currentLine);
+            w.setFieldA("^" + cmd + "（第 " + currentLine + " 行）");
+            w.setDetail(detail);
+            syntaxWarnings.add(w);
+        }
+    }
+
     public List<RenderWarning> analyze(double overlapThresholdMm) {
         int overlapThresholdDots = (int) Math.round(overlapThresholdMm * dpmm);
-        List<RenderWarning> warnings = new ArrayList<>();
+        List<RenderWarning> warnings = new ArrayList<>(syntaxWarnings);  // 語法警告優先
         checkOutOfBounds(warnings);
         checkOverlaps(warnings, Math.max(0, overlapThresholdDots));
         checkBarcodeGap(warnings);
@@ -394,9 +445,13 @@ public class ZplRenderer {
     // ─────────────────────────────────────────────────────────────────
 
     private void parse(String zpl) {
+        currentLine = 1;
+        syntaxWarnings.clear();
+        warnedCmds.clear();
         int i = 0;
         while (i < zpl.length()) {
             char c = zpl.charAt(i);
+            if (c == '\n') { currentLine++; i++; continue; }
             if (c == '~') {
                 i++;
                 if (i + 2 <= zpl.length()) {
@@ -459,9 +514,14 @@ public class ZplRenderer {
             // ^A0 = CG Triumvirate（scalable, bold proportional）
             case "A0" -> {
                 fontFace = '0';
-                if (p.length > 0 && !p[0].isEmpty()) fontOrientation = p[0].toUpperCase().charAt(0);
+                if (p.length > 0 && !p[0].isEmpty()) {
+                    if (!isValidOrientation(p[0]))
+                        addSyntaxWarn("A0", "方向參數 '" + p[0] + "' 無效，必須為 N/R/I/B");
+                    fontOrientation = p[0].toUpperCase().charAt(0);
+                }
                 fontHeight = intAt(p, 1, fontHeight);
                 fontWidth  = intAt(p, 2, 0);
+                if (fontHeight < 1) addSyntaxWarn("A0", "字型高度 h=" + fontHeight + " 無效，必須 ≥ 1");
             }
             // ^AA – ^AZ = bitmap fonts A-Z（monospaced style）
             case "AA","AB","AC","AD","AE","AF","AG","AH","AI","AJ","AK","AL","AM",
@@ -471,11 +531,13 @@ public class ZplRenderer {
                 if (p.length > 0 && !p[0].isEmpty()) fontOrientation = p[0].toUpperCase().charAt(0);
                 fontHeight = intAt(p, 1, fontHeight);
                 fontWidth  = intAt(p, 2, 0);
+                if (fontHeight < 1) addSyntaxWarn(cmd, "字型高度 h=" + fontHeight + " 無效，必須 ≥ 1");
             }
             // ^CFf,h = change default font (f = font id, h = height)
             case "CF" -> {
                 if (p.length > 0 && !p[0].isEmpty()) fontFace = p[0].toUpperCase().charAt(0);
                 fontHeight = intAt(p, 1, fontHeight);
+                if (fontHeight < 1) addSyntaxWarn("CF", "字型高度 h=" + fontHeight + " 無效，必須 ≥ 1");
             }
             // ^FR = Field Reverse（次個欄位前景/背景互換）
             case "FR" -> fieldReverse = true;
@@ -483,10 +545,22 @@ public class ZplRenderer {
             case "BY" -> {
                 barcodeModuleWidth = intAt(p, 0, barcodeModuleWidth);
                 barcodeHeight      = intAt(p, 2, barcodeHeight);
+                if (barcodeModuleWidth < 1)
+                    addSyntaxWarn("BY", "模組寬度 mw=" + barcodeModuleWidth + " 無效，必須 ≥ 1");
+                if (barcodeHeight < 1)
+                    addSyntaxWarn("BY", "條碼高度 h=" + barcodeHeight + " 無效，必須 ≥ 1");
             }
 
-            case "BC" -> { pendingBarcodeType = "BC"; pendingBarcodeParams = p; }
-            case "B3" -> { pendingBarcodeType = "B3"; pendingBarcodeParams = p; }
+            case "BC" -> {
+                if (p.length > 0 && !p[0].isEmpty() && !isValidOrientation(p[0]))
+                    addSyntaxWarn("BC", "方向參數 '" + p[0] + "' 無效，必須為 N/R/I/B");
+                pendingBarcodeType = "BC"; pendingBarcodeParams = p;
+            }
+            case "B3" -> {
+                if (p.length > 0 && !p[0].isEmpty() && !isValidOrientation(p[0]))
+                    addSyntaxWarn("B3", "方向參數 '" + p[0] + "' 無效，必須為 N/R/I/B");
+                pendingBarcodeType = "B3"; pendingBarcodeParams = p;
+            }
             case "BQ" -> { pendingBarcodeType = "BQ"; pendingBarcodeParams = p; }
             case "BX" -> { pendingBarcodeType = "BX"; pendingBarcodeParams = p; }
             case "BE" -> { pendingBarcodeType = "BE"; pendingBarcodeParams = p; }
@@ -496,10 +570,11 @@ public class ZplRenderer {
                 int w     = intAt(p, 0, 1);
                 int h     = intAt(p, 1, 1);
                 int thick = intAt(p, 2, 1);
+                if (w < 1)     addSyntaxWarn("GB", "寬度 w=" + w + " 無效，必須 ≥ 1");
+                if (h < 1)     addSyntaxWarn("GB", "高度 h=" + h + " 無效，必須 ≥ 1");
+                if (thick < 1) addSyntaxWarn("GB", "線條厚度 t=" + thick + " 無效，必須 ≥ 1");
                 Color col = (p.length > 3 && "W".equalsIgnoreCase(p[3].trim())) ? Color.WHITE : Color.BLACK;
                 if (fieldReverse) {
-                    // ^FR: XOR-invert the drawing area (Black on Black→White, Black on White→Black).
-                    // This is the correct ZPL "reverse dots" behavior (e.g. logo nested squares).
                     g.setColor(Color.BLACK);
                     g.setXORMode(Color.WHITE);
                     drawBox(w, h, thick, Color.BLACK, intAt(p, 4, 0));
@@ -522,7 +597,24 @@ public class ZplRenderer {
                             stored.getWidth(), stored.getHeight(), "GRAPHIC", filename));
                 }
             }
+
+            default -> {
+                if (!KNOWN_SILENT_CMDS.contains(cmd)) {
+                    String unsupportedMsg = UNSUPPORTED_CMD_MSGS.get(cmd);
+                    if (unsupportedMsg != null) {
+                        addUnknownCmdWarn(cmd, "不支援指令：" + unsupportedMsg);
+                    } else {
+                        addUnknownCmdWarn(cmd, "未知指令 ^" + cmd + "，將被略過");
+                    }
+                }
+            }
         }
+    }
+
+    private static boolean isValidOrientation(String s) {
+        if (s == null || s.isEmpty()) return true;
+        return "N".equalsIgnoreCase(s) || "R".equalsIgnoreCase(s)
+            || "I".equalsIgnoreCase(s) || "B".equalsIgnoreCase(s);
     }
 
     private void resetState() {

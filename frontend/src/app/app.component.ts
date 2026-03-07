@@ -1,13 +1,15 @@
-import { Component } from '@angular/core';
+import { Component, OnInit } from '@angular/core';
 import { NgIf, NgFor } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
 
 interface RenderWarning {
-  type: 'OUT_OF_BOUNDS' | 'OVERLAP' | 'BARCODE_GAP';
+  type: 'OUT_OF_BOUNDS' | 'OVERLAP' | 'BARCODE_GAP' | 'SYNTAX';
   fieldA: string;
   fieldB?: string;
   detail: string;
+  command?: string;
+  line?: number;
   sides?: string;
   excessDots?: number;
   boundsA?: number[];
@@ -32,7 +34,7 @@ interface PngToZplResponse {
   templateUrl: './app.component.html',
   styleUrls: ['./app.component.css']
 })
-export class AppComponent {
+export class AppComponent implements OnInit {
 
   // ── Tab state ───────────────────────────────────────────────────────
   activeTab: 'zpl' | 'png' = 'zpl';
@@ -148,6 +150,7 @@ export class AppComponent {
   isLoading     = false;
   errorMessage  = '';
   warnings: RenderWarning[] = [];
+  highlightedZpl = '';
 
   labelWidth  = 6;
   labelHeight = 4;
@@ -175,6 +178,10 @@ export class AppComponent {
   private readonly pngApiUrl = 'http://localhost:8080/api/png/to-zpl';
 
   constructor(private http: HttpClient) {}
+
+  ngOnInit(): void {
+    this.highlightedZpl = this.computeHighlight(this.zplInput);
+  }
 
   // ────────────────────────────────────────────────────────────────────
   //  ZPL → PNG methods
@@ -218,12 +225,25 @@ export class AppComponent {
     if (this.imageBase64) this.convertZpl();
   }
 
+  onZplInput(event: Event): void {
+    const value = (event.target as HTMLTextAreaElement).value;
+    this.highlightedZpl = this.computeHighlight(value);
+  }
+
+  onEditorScroll(event: Event): void {
+    const ta  = event.target as HTMLTextAreaElement;
+    const pre = ta.previousElementSibling as HTMLPreElement;
+    pre.scrollTop  = ta.scrollTop;
+    pre.scrollLeft = ta.scrollLeft;
+  }
+
   clearAll(): void {
-    this.zplInput     = '';
-    this.imageBase64  = '';
-    this.errorMessage = '';
-    this.warnings     = [];
-    this.debugMode    = false;
+    this.zplInput       = '';
+    this.highlightedZpl = '';
+    this.imageBase64    = '';
+    this.errorMessage   = '';
+    this.warnings       = [];
+    this.debugMode      = false;
   }
 
   downloadImage(): void {
@@ -237,6 +257,75 @@ export class AppComponent {
   get outOfBoundsCount(): number { return this.warnings.filter(w => w.type === 'OUT_OF_BOUNDS').length; }
   get overlapCount(): number { return this.warnings.filter(w => w.type === 'OVERLAP').length; }
   get barcodeGapCount(): number { return this.warnings.filter(w => w.type === 'BARCODE_GAP').length; }
+  get syntaxCount(): number { return this.warnings.filter(w => w.type === 'SYNTAX').length; }
+
+  // ── ZPL Syntax Highlighter ──────────────────────────────────────────
+
+  private computeHighlight(raw: string): string {
+    const esc = (s: string) => s
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+
+    const out: string[] = [];
+    let i = 0;
+
+    while (i < raw.length) {
+      const c = raw[i];
+
+      if (c === '~') {
+        i++;
+        const cmd = raw.slice(i, i + 2).toUpperCase();
+        out.push(`<span class="hl-tilde">~${esc(cmd)}</span>`);
+        i += 2;
+        // read params / data until next command
+        const ps = i;
+        while (i < raw.length && raw[i] !== '^' && raw[i] !== '~') i++;
+        if (i > ps) out.push(`<span class="hl-dg">${esc(raw.slice(ps, i))}</span>`);
+
+      } else if (c === '^') {
+        i++;
+        const cmdRaw = raw.slice(i, Math.min(i + 2, raw.length));
+        const cmd    = cmdRaw.toUpperCase();
+        i += cmdRaw.length;
+
+        if (cmd === 'FD') {
+          // find ^FS
+          let fsIdx = -1;
+          for (let j = i; j + 2 < raw.length; j++) {
+            if (raw[j] === '^' && raw.slice(j + 1, j + 3).toUpperCase() === 'FS') { fsIdx = j; break; }
+          }
+          if (fsIdx >= 0) {
+            out.push(`<span class="hl-fd">^FD</span>`);
+            out.push(`<span class="hl-str">${esc(raw.slice(i, fsIdx))}</span>`);
+            out.push(`<span class="hl-fd">^FS</span>`);
+            i = fsIdx + 3;
+          } else {
+            out.push(`<span class="hl-fd">^FD</span>`);
+            out.push(`<span class="hl-str">${esc(raw.slice(i))}</span>`);
+            i = raw.length;
+          }
+        } else {
+          const isLabel = cmd === 'XA' || cmd === 'XZ';
+          out.push(`<span class="${isLabel ? 'hl-label' : 'hl-cmd'}">^${esc(cmdRaw)}</span>`);
+          const ps = i;
+          while (i < raw.length && raw[i] !== '^' && raw[i] !== '~') i++;
+          if (i > ps) {
+            const colored = esc(raw.slice(ps, i))
+              .replace(/(\d+)/g, '<span class="hl-num">$1</span>');
+            out.push(`<span class="hl-param">${colored}</span>`);
+          }
+        }
+
+      } else {
+        const ps = i;
+        while (i < raw.length && raw[i] !== '^' && raw[i] !== '~') i++;
+        out.push(esc(raw.slice(ps, i)));
+      }
+    }
+
+    return out.join('');
+  }
 
   // ────────────────────────────────────────────────────────────────────
   //  PNG → ZPL methods
@@ -310,7 +399,8 @@ export class AppComponent {
   }
 
   sendToViewer(): void {
-    this.zplInput  = this.generatedZpl;
-    this.activeTab = 'zpl';
+    this.zplInput       = this.generatedZpl;
+    this.highlightedZpl = this.computeHighlight(this.zplInput);
+    this.activeTab      = 'zpl';
   }
 }
