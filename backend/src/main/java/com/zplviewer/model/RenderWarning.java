@@ -5,7 +5,7 @@ package com.zplviewer.model;
  */
 public class RenderWarning {
 
-    /** "OUT_OF_BOUNDS" | "OVERLAP" */
+    /** "OUT_OF_BOUNDS" | "OVERLAP" | "BARCODE_GAP" */
     private String type;
 
     /** 第一個欄位的描述，例如 "CODE128: 123456789" */

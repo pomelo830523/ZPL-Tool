@@ -324,6 +324,7 @@ textarea {
 }
 .chip-oob     { background: #ffcdd2; color: #b71c1c; }
 .chip-overlap { background: #ffe0b2; color: #e65100; }
+.chip-gap     { background: #e8eaf6; color: #283593; }
 
 .debug-hint {
   font-size: 11px;
@@ -349,6 +350,7 @@ textarea {
 }
 .warning-item.oob { background: #ffebee; border-left-color: #e53935; }
 .warning-item.ov  { background: #fff3e0; border-left-color: #fb8c00; }
+.warning-item.gap { background: #e8eaf6; border-left-color: #3f51b5; }
 
 .w-badge {
   font-size: 11px;
@@ -360,6 +362,7 @@ textarea {
 }
 .oob .w-badge { background: #e53935; color: white; }
 .ov  .w-badge { background: #fb8c00; color: white; }
+.gap .w-badge { background: #3f51b5; color: white; }
 
 .w-body { flex: 1; }
 

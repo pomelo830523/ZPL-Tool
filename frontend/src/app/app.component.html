@@ -45,9 +45,14 @@
             </select>
           </div>
           <div class="setting-item">
-            <label for="threshold">重疊閾值 (dots)</label>
-            <input id="threshold" type="number" [(ngModel)]="overlapThresholdDots"
-                   min="0" max="100" step="1" title="兩個欄位的交集寬度與高度同時超過此值才視為重疊">
+            <label for="barcodeHeight">條碼高度 (dots)</label>
+            <input id="barcodeHeight" type="number" [(ngModel)]="barcodeHeight"
+                   min="10" max="1000" step="10" title="預設條碼高度（可被 ZPL ^BY 指令覆蓋）">
+          </div>
+          <div class="setting-item">
+            <label for="threshold">重疊閾值 (mm)</label>
+            <input id="threshold" type="number" [(ngModel)]="overlapThresholdMm"
+                   min="0" max="10" step="0.1" title="兩個欄位的交集寬度與高度同時超過此值才視為重疊">
           </div>
         </div>
       </div>
@@ -131,14 +136,20 @@
             <span class="warnings-chips">
               <span class="chip chip-oob" *ngIf="outOfBoundsCount > 0">超出邊界 ×{{ outOfBoundsCount }}</span>
               <span class="chip chip-overlap" *ngIf="overlapCount > 0">重疊 ×{{ overlapCount }}</span>
+              <span class="chip chip-gap" *ngIf="barcodeGapCount > 0">條碼間距 ×{{ barcodeGapCount }}</span>
             </span>
             <span class="debug-hint" *ngIf="debugMode">Debug 標註已顯示於圖片中</span>
             <span class="debug-hint" *ngIf="!debugMode">開啟「Debug 檢視」可在圖片上標示問題位置</span>
           </div>
           <div class="warnings-list">
             <div class="warning-item" *ngFor="let w of warnings"
-                 [class.oob]="w.type === 'OUT_OF_BOUNDS'" [class.ov]="w.type === 'OVERLAP'">
-              <span class="w-badge">{{ w.type === 'OUT_OF_BOUNDS' ? '超出邊界' : '重疊' }}</span>
+                 [class.oob]="w.type === 'OUT_OF_BOUNDS'"
+                 [class.ov]="w.type === 'OVERLAP'"
+                 [class.gap]="w.type === 'BARCODE_GAP'">
+              <span class="w-badge">{{
+                w.type === 'OUT_OF_BOUNDS' ? '超出邊界' :
+                w.type === 'OVERLAP'       ? '重疊' : '條碼間距'
+              }}</span>
               <div class="w-body">
                 <div class="w-fields">
                   {{ w.fieldA }}
@@ -151,7 +162,7 @@
           </div>
         </div>
         <div class="warnings-ok" *ngIf="warningCount === 0">
-          <span class="ok-icon">✓</span> 未偵測到問題（閾值 {{ overlapThresholdDots }} dots）
+          <span class="ok-icon">✓</span> 未偵測到問題（重疊閾值 {{ overlapThresholdMm }} mm）
         </div>
       </ng-container>
     </section>

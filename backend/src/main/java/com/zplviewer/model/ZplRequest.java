@@ -11,11 +11,17 @@ public class ZplRequest {
     private boolean debug = false;
 
     /**
-     * 重疊判定閾值（dots）。
+     * 重疊判定閾值（mm）。
      * 兩個欄位的交集寬度 AND 高度都超過此值時才視為重疊。
-     * 預設 5 dots，設為 0 則任何交集都觸發警告。
+     * 預設為 0，任何交集都觸發警告。
      */
-    private int overlapThresholdDots = 5;
+    private double overlapThresholdMm = 0;
+
+    /**
+     * 條碼預設高度（dots）。對應 ZplRenderer 的 barcodeHeight 初始值。
+     * ZPL 指令 ^BY 可覆蓋此預設值。
+     */
+    private int defaultBarcodeHeight = 100;
 
     public String getZpl()    { return zpl; }
     public void setZpl(String zpl) { this.zpl = zpl; }
@@ -32,8 +38,13 @@ public class ZplRequest {
     public boolean isDebug()  { return debug; }
     public void setDebug(boolean debug) { this.debug = debug; }
 
-    public int getOverlapThresholdDots() { return overlapThresholdDots; }
-    public void setOverlapThresholdDots(int overlapThresholdDots) {
-        this.overlapThresholdDots = Math.max(0, overlapThresholdDots);
+    public double getOverlapThresholdMm() { return overlapThresholdMm; }
+    public void setOverlapThresholdMm(double overlapThresholdMm) {
+        this.overlapThresholdMm = Math.max(0, overlapThresholdMm);
+    }
+
+    public int getDefaultBarcodeHeight() { return defaultBarcodeHeight; }
+    public void setDefaultBarcodeHeight(int defaultBarcodeHeight) {
+        this.defaultBarcodeHeight = Math.max(10, defaultBarcodeHeight);
     }
 }
