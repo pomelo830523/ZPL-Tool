@@ -3,9 +3,11 @@ package com.zplviewer.service;
 import com.zplviewer.model.ConvertResponse;
 import com.zplviewer.model.RenderWarning;
 import com.zplviewer.model.ZplRequest;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.awt.Font;
 import java.util.Base64;
 import java.util.List;
 
@@ -14,6 +16,9 @@ public class ZplService {
 
     @Value("${zpl.barcode.min-horizontal-gap-mm:5}")
     private double minBarcodeGapMm;
+
+    @Autowired
+    private Font cgTriumvirateFont;
 
     /**
      * 將 ZPL 轉為 PNG，同時分析並回傳渲染警告。
@@ -27,7 +32,7 @@ public class ZplService {
         int minBarcodeGapDots = (int) Math.round(minBarcodeGapMm * dpmm);
 
         ZplRenderer renderer = new ZplRenderer(widthDots, heightDots, dpmm,
-                request.getDefaultBarcodeHeight(), minBarcodeGapDots);
+                request.getDefaultBarcodeHeight(), minBarcodeGapDots, cgTriumvirateFont);
 
         // Step 1：渲染（同時建立 BoundingBox 記錄）
         renderer.render(request.getZpl());

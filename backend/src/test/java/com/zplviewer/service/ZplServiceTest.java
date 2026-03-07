@@ -2,20 +2,36 @@ package com.zplviewer.service;
 
 import com.zplviewer.model.ConvertResponse;
 import com.zplviewer.model.ZplRequest;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
+
+import java.awt.Font;
+import java.io.InputStream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class ZplServiceTest {
 
+    private static Font testFont;
     private ZplService service;
+
+    @BeforeAll
+    static void loadFont() throws Exception {
+        try (InputStream is = ZplServiceTest.class
+                .getResourceAsStream("/fonts/BarlowCondensed-Bold.ttf")) {
+            if (is == null)
+                throw new IllegalStateException("字型檔案不存在：請確認 src/main/resources/fonts/BarlowCondensed-Bold.ttf");
+            testFont = Font.createFont(Font.TRUETYPE_FONT, is);
+        }
+    }
 
     @BeforeEach
     void setUp() {
         service = new ZplService();
         ReflectionTestUtils.setField(service, "minBarcodeGapMm", 5.0);
+        ReflectionTestUtils.setField(service, "cgTriumvirateFont", testFont);
     }
 
     private ZplRequest request(String zpl) {

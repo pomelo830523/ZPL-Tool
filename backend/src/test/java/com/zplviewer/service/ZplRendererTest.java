@@ -1,8 +1,11 @@
 package com.zplviewer.service;
 
 import com.zplviewer.model.RenderWarning;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import java.awt.Font;
+import java.io.InputStream;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -25,8 +28,20 @@ class ZplRendererTest {
     private static final int DPMM = 8;
     private static final int MIN_GAP_DOTS = 0; // disabled by default; enabled in gap tests
 
+    private static Font testFont;
+
+    @BeforeAll
+    static void loadFont() throws Exception {
+        try (InputStream is = ZplRendererTest.class
+                .getResourceAsStream("/fonts/BarlowCondensed-Bold.ttf")) {
+            if (is == null)
+                throw new IllegalStateException("字型檔案不存在：請確認 src/main/resources/fonts/BarlowCondensed-Bold.ttf");
+            testFont = Font.createFont(Font.TRUETYPE_FONT, is);
+        }
+    }
+
     private ZplRenderer renderer(int minGapDots) {
-        return new ZplRenderer(W, H, DPMM, 100, minGapDots);
+        return new ZplRenderer(W, H, DPMM, 100, minGapDots, testFont);
     }
 
     private ZplRenderer renderer() {
@@ -51,7 +66,7 @@ class ZplRendererTest {
     @Test
     void render_smallDimensions_clampedTo50() {
         // Constructor must clamp width/height to at least 50
-        ZplRenderer r = new ZplRenderer(10, 10, DPMM, 100, 0);
+        ZplRenderer r = new ZplRenderer(10, 10, DPMM, 100, 0, testFont);
         assertDoesNotThrow(() -> {
             r.render("^XA^XZ");
             r.toPng();

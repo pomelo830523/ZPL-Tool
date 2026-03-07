@@ -71,13 +71,17 @@ public class ZplRenderer {
     // ── Graphics store (~DG / ^XG) ───────────────────────────────────
     private final Map<String, BufferedImage> graphicStore = new HashMap<>();
 
+    // ── Embedded font (^A0 / Font 0 = CG Triumvirate) ────────────────
+    private final Font cgFont;
+
     // ── Graphics state ───────────────────────────────────────────────
     private BufferedImage image;
     private Graphics2D    g;
 
     // ─────────────────────────────────────────────────────────────────
     public ZplRenderer(int labelWidthDots, int labelHeightDots,
-                       int dpmm, int defaultBarcodeHeight, int minBarcodeGapDots) {
+                       int dpmm, int defaultBarcodeHeight, int minBarcodeGapDots,
+                       Font cgFont) {
         this.labelWidthDots    = Math.max(labelWidthDots,  50);
         this.labelHeightDots   = Math.max(labelHeightDots, 50);
         this.dpmm              = Math.max(dpmm, 1);
@@ -85,6 +89,7 @@ public class ZplRenderer {
         this.minBarcodeGapDots = Math.max(minBarcodeGapDots, 0);
         this.marginDots        = (int) Math.round(3.0 * this.dpmm);
         this.barcodeHeight     = this.defaultBarcodeHeight;
+        this.cgFont            = cgFont;
     }
 
     // ═════════════════════════════════════════════════════════════════
@@ -183,6 +188,67 @@ public class ZplRenderer {
 
     private static final java.util.Set<String> BARCODE_TYPES =
             java.util.Set.of("CODE128", "CODE39", "QRCODE", "DATAMATRIX");
+
+    // ── CG Triumvirate Bold advance widths ────────────────────────────
+    // 量測來源：Labelary 輸出（^A0N,30,24）
+    // 使用方式：charWidth = CG_WIDTHS[c] * effectiveW / CG_REF_RATIO
+    //   effectiveW = fontWidth（若已指定）否則 = fontHeight
+    //   CG_REF_RATIO = 量測時的 w/h = 24/30
+    private static final float CG_REF_RATIO    = 24.0f / 30.0f;  // 0.8
+    private static final float CG_DEFAULT_RATIO = 0.3333f;        // 未量測字元的預設值
+    private static final java.util.Map<Character, Float> CG_WIDTHS = new java.util.HashMap<>();
+    static {
+        // ── 大寫 A–Z（advance width，從 Labelary PNG 量測）──────────────
+        CG_WIDTHS.put('A', 0.4667f);  CG_WIDTHS.put('B', 0.4000f);
+        CG_WIDTHS.put('C', 0.4667f);  CG_WIDTHS.put('D', 0.4667f);
+        CG_WIDTHS.put('E', 0.4000f);  CG_WIDTHS.put('F', 0.3667f);
+        CG_WIDTHS.put('G', 0.5000f);  CG_WIDTHS.put('H', 0.5000f);
+        CG_WIDTHS.put('I', 0.2667f);  CG_WIDTHS.put('J', 0.4000f);
+        CG_WIDTHS.put('K', 0.4333f);  CG_WIDTHS.put('L', 0.4000f);
+        CG_WIDTHS.put('M', 0.6000f);  CG_WIDTHS.put('N', 0.4667f);
+        CG_WIDTHS.put('O', 0.4667f);  CG_WIDTHS.put('P', 0.4333f);
+        CG_WIDTHS.put('Q', 0.4667f);  CG_WIDTHS.put('R', 0.4333f);
+        CG_WIDTHS.put('S', 0.4333f);  CG_WIDTHS.put('T', 0.4333f);
+        CG_WIDTHS.put('U', 0.4667f);  CG_WIDTHS.put('V', 0.4333f);
+        CG_WIDTHS.put('W', 0.6333f);  CG_WIDTHS.put('X', 0.4333f);
+        CG_WIDTHS.put('Y', 0.4667f);  CG_WIDTHS.put('Z', 0.5000f);
+        // ── 小寫 a–z ──────────────────────────────
+        CG_WIDTHS.put('a', 0.4000f);  CG_WIDTHS.put('b', 0.3667f);
+        CG_WIDTHS.put('c', 0.3667f);  CG_WIDTHS.put('d', 0.3667f);
+        CG_WIDTHS.put('e', 0.4000f);  CG_WIDTHS.put('f', 0.2333f);
+        CG_WIDTHS.put('g', 0.4000f);  CG_WIDTHS.put('h', 0.4000f);
+        CG_WIDTHS.put('i', 0.2667f);  CG_WIDTHS.put('j', 0.2667f);
+        CG_WIDTHS.put('k', 0.3333f);  CG_WIDTHS.put('l', 0.2000f);
+        CG_WIDTHS.put('m', 0.6333f);  CG_WIDTHS.put('n', 0.4333f);
+        CG_WIDTHS.put('o', 0.4333f);  CG_WIDTHS.put('p', 0.4000f);
+        CG_WIDTHS.put('q', 0.4000f);  CG_WIDTHS.put('r', 0.3333f);
+        CG_WIDTHS.put('s', 0.3333f);  CG_WIDTHS.put('t', 0.2667f);
+        CG_WIDTHS.put('u', 0.3667f);  CG_WIDTHS.put('v', 0.3333f);
+        CG_WIDTHS.put('w', 0.5333f);  CG_WIDTHS.put('x', 0.3667f);
+        CG_WIDTHS.put('y', 0.3333f);  CG_WIDTHS.put('z', 0.4333f);
+        // ── 數字 0–9 ──────────────────────────────
+        CG_WIDTHS.put('0', 0.4333f);  CG_WIDTHS.put('1', 0.3333f);
+        CG_WIDTHS.put('2', 0.4000f);  CG_WIDTHS.put('3', 0.3667f);
+        CG_WIDTHS.put('4', 0.4000f);  CG_WIDTHS.put('5', 0.3667f);
+        CG_WIDTHS.put('6', 0.4000f);  CG_WIDTHS.put('7', 0.3667f);
+        CG_WIDTHS.put('8', 0.4000f);  CG_WIDTHS.put('9', 0.3600f);
+        // ── 標點符號（量測值） ─────────────────────
+        CG_WIDTHS.put('(', 0.2000f);  CG_WIDTHS.put(')', 0.2667f);
+        CG_WIDTHS.put('-', 0.6000f);
+        // ── 常用標點（估算值，可日後校準） ──────────
+        CG_WIDTHS.put(' ', 0.2333f);  CG_WIDTHS.put('.', 0.2333f);
+        CG_WIDTHS.put(',', 0.2333f);  CG_WIDTHS.put(':', 0.2333f);
+        CG_WIDTHS.put(';', 0.2333f);  CG_WIDTHS.put('!', 0.2333f);
+        CG_WIDTHS.put('?', 0.3000f);  CG_WIDTHS.put('/', 0.2000f);
+        CG_WIDTHS.put('\\',0.2000f);  CG_WIDTHS.put('|', 0.2000f);
+        CG_WIDTHS.put('+', 0.3333f);  CG_WIDTHS.put('=', 0.3333f);
+        CG_WIDTHS.put('_', 0.3333f);  CG_WIDTHS.put('@', 0.5000f);
+        CG_WIDTHS.put('#', 0.3667f);  CG_WIDTHS.put('$', 0.3000f);
+        CG_WIDTHS.put('%', 0.4333f);  CG_WIDTHS.put('&', 0.4000f);
+        CG_WIDTHS.put('*', 0.2667f);  CG_WIDTHS.put('<', 0.3333f);
+        CG_WIDTHS.put('>', 0.3333f);  CG_WIDTHS.put('"', 0.2333f);
+        CG_WIDTHS.put('\'',0.2333f);
+    }
 
     private void checkBarcodeGap(List<RenderWarning> warnings) {
         if (minBarcodeGapDots <= 0) return;
@@ -486,41 +552,29 @@ public class ZplRenderer {
 
     private void renderText(String text) {
         int fh = Math.max(fontHeight, 8);
-        String fontName  = (fontFace == '0') ? Font.SANS_SERIF : Font.MONOSPACED;
-        int    fontStyle = (fontFace == '0') ? Font.BOLD : Font.PLAIN;
 
-        Font font = new Font(fontName, fontStyle, fh);
+        // Font 0 → 嵌入的 BarlowCondensed-Bold；Font A-Z → 內建等寬字型
+        Font font = (fontFace == '0')
+                ? cgFont.deriveFont(Font.PLAIN, (float) fh)
+                : new Font(Font.MONOSPACED, Font.PLAIN, fh);
         g.setFont(font);
         FontMetrics fm = g.getFontMetrics();
 
-        // capHpx: actual visual height of uppercase 'H' at this em-size, measured directly.
-        // Baseline = fieldOriginY + capHpx  →  top of caps aligns with fieldOriginY.
+        // 大寫 'H' 的視覺高度 → baseline 計算基準
         int capHpx = (int) Math.round(
                 font.createGlyphVector(g.getFontRenderContext(), "H")
                     .getVisualBounds().getHeight());
 
-        // Horizontal scale:
-        //   explicit ^A0/^CF width → use as-is
-        //   Font 0 default        → Java SANS_SERIF Bold (Arial) is ~20% wider than
-        //                           ZPL Font 0 (CG Triumvirate Bold); apply correction
-        //   Font A-Z default      → natural monospaced width
-        double xScale;
-        if (fontWidth > 0) {
-            xScale = (double) fontWidth / fontHeight;
-        } else if (fontFace == '0') {
-            xScale = 0.82;
-        } else {
-            xScale = 1.0;
-        }
+        // effectiveW：用於查表縮放
+        //   指定 fontWidth  → 使用 fontWidth
+        //   未指定          → 使用 fontHeight（對應 CG Triumvirate 的自然比例）
+        int effectiveW = (fontWidth > 0) ? fontWidth : fontHeight;
 
-        // naturalW：計入連字號 '-' 三倍寬
-        int naturalW = 0;
-        for (int ci = 0; ci < text.length(); ci++) {
-            int cw = fm.charWidth(text.charAt(ci));
-            naturalW += (text.charAt(ci) == '-') ? cw * 3 : cw;
-        }
-        int textW = (int) Math.round(naturalW * xScale);
-        int textH = (int) Math.round(fh * 0.8);  // ZPL h ≈ cap height
+        // 計算字串總寬（查 CG_WIDTHS 表）
+        int textW = 0;
+        for (int ci = 0; ci < text.length(); ci++)
+            textW += cgCharWidth(text.charAt(ci), effectiveW, fm);
+        int textH = (int) Math.round(fh * 0.8);
 
         // BoundingBox（旋轉時 w/h 互換）
         int recW = (fontOrientation == 'R' || fontOrientation == 'B') ? textH : textW;
@@ -531,30 +585,54 @@ public class ZplRenderer {
         g.setColor(fieldReverse ? Color.WHITE : Color.BLACK);
 
         AffineTransform saved = g.getTransform();
-        switch (fontOrientation) {
-            case 'N' -> {
-                g.translate(fieldOriginX, 0);
-                if (xScale != 1.0) g.scale(xScale, 1.0);
-                drawCharsWithHyphen(text, 0, fieldOriginY + capHpx, fm);
-            }
-            case 'R' -> { g.translate(fieldOriginX + fh,    fieldOriginY);         g.rotate( Math.PI / 2); drawCharsWithHyphen(text, 0, capHpx, fm); }
-            case 'I' -> { g.translate(fieldOriginX + textW, fieldOriginY + fh);    g.rotate( Math.PI);     drawCharsWithHyphen(text, 0, capHpx, fm); }
-            case 'B' -> { g.translate(fieldOriginX,         fieldOriginY + textW); g.rotate(-Math.PI / 2); drawCharsWithHyphen(text, 0, capHpx, fm); }
+        int baselineY;
+        if (fontOrientation == 'R') {
+            g.translate(fieldOriginX + fh,    fieldOriginY);         g.rotate( Math.PI / 2); baselineY = capHpx;
+        } else if (fontOrientation == 'I') {
+            g.translate(fieldOriginX + textW, fieldOriginY + fh);    g.rotate( Math.PI);     baselineY = capHpx;
+        } else if (fontOrientation == 'B') {
+            g.translate(fieldOriginX,         fieldOriginY + textW); g.rotate(-Math.PI / 2); baselineY = capHpx;
+        } else {
+            g.translate(fieldOriginX, 0);                                                     baselineY = fieldOriginY + capHpx;
         }
+        drawCharsWithCgWidths(text, 0, baselineY, fm, effectiveW);
         g.setTransform(saved);
         fieldReverse = false;
     }
 
-    /** 逐字繪製文字，'-' 字元佔三倍寬（置中顯示）。 */
-    private void drawCharsWithHyphen(String text, float startX, int baselineY, FontMetrics fm) {
+    /**
+     * 逐字繪製文字：依 CG_WIDTHS 查表計算每字元目標寬度，
+     * 再以 per-character AffineTransform 精確縮放到目標寬度後繪製。
+     */
+    private void drawCharsWithCgWidths(String text, float startX, int baselineY,
+                                        FontMetrics fm, int effectiveW) {
+        AffineTransform base = g.getTransform();
         float penX = startX;
         for (int ci = 0; ci < text.length(); ci++) {
             char c = text.charAt(ci);
-            int cw = fm.charWidth(c);
-            float slot = (c == '-') ? cw * 3.0f : cw;
-            g.drawString(String.valueOf(c), penX + (slot - cw) / 2.0f, baselineY);
-            penX += slot;
+            int targetW  = cgCharWidth(c, effectiveW, fm);
+            int naturalW = Math.max(1, fm.charWidth(c));
+            double charXScale = (double) targetW / naturalW;
+
+            g.setTransform(base);
+            g.translate(penX, 0);
+            if (Math.abs(charXScale - 1.0) > 0.005) g.scale(charXScale, 1.0);
+            g.drawString(String.valueOf(c), 0, baselineY);
+            penX += targetW;
         }
+        g.setTransform(base);
+    }
+
+    /**
+     * 查 CG_WIDTHS 表，回傳字元 c 的目標像素寬度。
+     * Font 0 → 查表；其他字型 → 使用字型本身的 advance width。
+     */
+    private int cgCharWidth(char c, int effectiveW, FontMetrics fm) {
+        if (fontFace == '0') {
+            float ratio = CG_WIDTHS.getOrDefault(c, CG_DEFAULT_RATIO);
+            return Math.max(1, Math.round(ratio * effectiveW / CG_REF_RATIO));
+        }
+        return fm.charWidth(c);
     }
 
     // ── Barcode routing ───────────────────────────────────────────────
