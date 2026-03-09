@@ -29,12 +29,12 @@
         <h2>ZPL 輸入</h2>
         <div class="settings">
           <div class="setting-item">
-            <label for="width">寬度 (英吋)</label>
-            <input id="width" type="number" [(ngModel)]="labelWidth" min="1" max="10" step="0.5">
+            <label for="width">寬度 (mm)</label>
+            <input id="width" type="number" [(ngModel)]="labelWidth" min="25" max="300" step="1">
           </div>
           <div class="setting-item">
-            <label for="height">高度 (英吋)</label>
-            <input id="height" type="number" [(ngModel)]="labelHeight" min="1" max="10" step="0.5">
+            <label for="height">高度 (mm)</label>
+            <input id="height" type="number" [(ngModel)]="labelHeight" min="25" max="300" step="1">
           </div>
           <div class="setting-item">
             <label for="dpmm">解析度</label>
@@ -48,11 +48,6 @@
             <label for="barcodeHeight">條碼高度 (dots)</label>
             <input id="barcodeHeight" type="number" [(ngModel)]="barcodeHeight"
                    min="10" max="1000" step="10" title="預設條碼高度（可被 ZPL ^BY 指令覆蓋）">
-          </div>
-          <div class="setting-item">
-            <label for="threshold">重疊閾值 (mm)</label>
-            <input id="threshold" type="number" [(ngModel)]="overlapThresholdMm"
-                   min="0" max="10" step="0.1" title="兩個欄位的交集寬度與高度同時超過此值才視為重疊">
           </div>
         </div>
       </div>
@@ -173,7 +168,7 @@
           </div>
         </div>
         <div class="warnings-ok" *ngIf="warningCount === 0">
-          <span class="ok-icon">✓</span> 未偵測到問題（重疊閾值 {{ overlapThresholdMm }} mm）
+          <span class="ok-icon">✓</span> 未偵測到問題
         </div>
       </ng-container>
     </section>

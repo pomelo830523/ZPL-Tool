@@ -3,19 +3,12 @@ package com.zplviewer.model;
 public class ZplRequest {
 
     private String zpl;
-    private double width  = 4.0;
-    private double height = 6.0;
+    private double width  = 152.0;
+    private double height = 102.0;
     private int    dpmm   = 8;
 
     /** 是否回傳 Debug 標註圖（超出/重疊區域以顏色標記） */
     private boolean debug = false;
-
-    /**
-     * 重疊判定閾值（mm）。
-     * 兩個欄位的交集寬度 AND 高度都超過此值時才視為重疊。
-     * 預設為 0，任何交集都觸發警告。
-     */
-    private double overlapThresholdMm = 0;
 
     /**
      * 條碼預設高度（dots）。對應 ZplRenderer 的 barcodeHeight 初始值。
@@ -37,11 +30,6 @@ public class ZplRequest {
 
     public boolean isDebug()  { return debug; }
     public void setDebug(boolean debug) { this.debug = debug; }
-
-    public double getOverlapThresholdMm() { return overlapThresholdMm; }
-    public void setOverlapThresholdMm(double overlapThresholdMm) {
-        this.overlapThresholdMm = Math.max(0, overlapThresholdMm);
-    }
 
     public int getDefaultBarcodeHeight() { return defaultBarcodeHeight; }
     public void setDefaultBarcodeHeight(int defaultBarcodeHeight) {

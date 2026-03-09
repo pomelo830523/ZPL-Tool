@@ -17,6 +17,21 @@ public class ZplService {
     @Value("${zpl.barcode.min-horizontal-gap-mm:5}")
     private double minBarcodeGapMm;
 
+    @Value("${zpl.margin.top-mm:1}")
+    private double marginTopMm;
+
+    @Value("${zpl.margin.bottom-mm:1}")
+    private double marginBottomMm;
+
+    @Value("${zpl.margin.left-mm:3}")
+    private double marginLeftMm;
+
+    @Value("${zpl.margin.right-mm:8}")
+    private double marginRightMm;
+
+    @Value("${zpl.overlap.threshold-mm:0}")
+    private double overlapThresholdMm;
+
     @Autowired
     private Font cgTriumvirateFont;
 
@@ -27,18 +42,24 @@ public class ZplService {
      */
     public ConvertResponse convertToPng(ZplRequest request) throws Exception {
         int dpmm       = request.getDpmm();
-        int widthDots  = (int) Math.round(request.getWidth()  * 25.4 * dpmm);
-        int heightDots = (int) Math.round(request.getHeight() * 25.4 * dpmm);
+        int widthDots  = (int) Math.round(request.getWidth()  * dpmm);
+        int heightDots = (int) Math.round(request.getHeight() * dpmm);
         int minBarcodeGapDots = (int) Math.round(minBarcodeGapMm * dpmm);
+        int marginTopDots    = (int) Math.round(marginTopMm    * dpmm);
+        int marginBottomDots = (int) Math.round(marginBottomMm * dpmm);
+        int marginLeftDots   = (int) Math.round(marginLeftMm   * dpmm);
+        int marginRightDots  = (int) Math.round(marginRightMm  * dpmm);
 
         ZplRenderer renderer = new ZplRenderer(widthDots, heightDots, dpmm,
-                request.getDefaultBarcodeHeight(), minBarcodeGapDots, cgTriumvirateFont);
+                request.getDefaultBarcodeHeight(), minBarcodeGapDots,
+                marginTopDots, marginBottomDots, marginLeftDots, marginRightDots,
+                cgTriumvirateFont);
 
         // Step 1：渲染（同時建立 BoundingBox 記錄）
         renderer.render(request.getZpl());
 
         // Step 2：分析警告
-        List<RenderWarning> warnings = renderer.analyze(request.getOverlapThresholdMm());
+        List<RenderWarning> warnings = renderer.analyze(overlapThresholdMm);
 
         // Step 3（選用）：在圖片上疊加 Debug 標註
         if (request.isDebug()) {

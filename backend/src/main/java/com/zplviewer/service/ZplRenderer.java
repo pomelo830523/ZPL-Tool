@@ -37,7 +37,10 @@ public class ZplRenderer {
     private final int dpmm;               // dots per mm
     private final int defaultBarcodeHeight; // default ^BY barcode height
     private final int minBarcodeGapDots;  // minimum horizontal gap between barcodes
-    private final int marginDots;         // 3 mm safety margin from each edge
+    private final int marginTopDots;
+    private final int marginBottomDots;
+    private final int marginLeftDots;
+    private final int marginRightDots;
 
     // ── Current field state ──────────────────────────────────────────
     private int  fieldOriginX    = 0;
@@ -108,13 +111,17 @@ public class ZplRenderer {
     // ─────────────────────────────────────────────────────────────────
     public ZplRenderer(int labelWidthDots, int labelHeightDots,
                        int dpmm, int defaultBarcodeHeight, int minBarcodeGapDots,
+                       int marginTopDots, int marginBottomDots, int marginLeftDots, int marginRightDots,
                        Font cgFont) {
         this.labelWidthDots    = Math.max(labelWidthDots,  50);
         this.labelHeightDots   = Math.max(labelHeightDots, 50);
         this.dpmm              = Math.max(dpmm, 1);
         this.defaultBarcodeHeight = Math.max(defaultBarcodeHeight, 10);
         this.minBarcodeGapDots = Math.max(minBarcodeGapDots, 0);
-        this.marginDots        = (int) Math.round(3.0 * this.dpmm);
+        this.marginTopDots    = Math.max(marginTopDots, 0);
+        this.marginBottomDots = Math.max(marginBottomDots, 0);
+        this.marginLeftDots   = Math.max(marginLeftDots, 0);
+        this.marginRightDots  = Math.max(marginRightDots, 0);
         this.barcodeHeight     = this.defaultBarcodeHeight;
         this.cgFont            = cgFont;
     }
@@ -180,20 +187,20 @@ public class ZplRenderer {
     }
 
     private void checkOutOfBounds(List<RenderWarning> warnings) {
-        // 安全邊界：距離標籤邊緣 3 mm 以內視為超出
-        int safeL = marginDots;
-        int safeT = marginDots;
-        int safeR = labelWidthDots  - marginDots;
-        int safeB = labelHeightDots - marginDots;
+        int safeL = marginLeftDots;
+        int safeT = marginTopDots;
+        int safeR = labelWidthDots  - marginRightDots;
+        int safeB = labelHeightDots - marginBottomDots;
 
         for (FieldRecord f : renderedFields) {
             List<String> sides = new ArrayList<>();
             int excessDots = 0;
+            int sideMarginDots = 0;
 
-            if (f.x()          < safeL) { sides.add("LEFT");   excessDots = Math.max(excessDots, safeL - f.x()); }
-            if (f.y()          < safeT) { sides.add("TOP");    excessDots = Math.max(excessDots, safeT - f.y()); }
-            if (f.x() + f.w() > safeR) { sides.add("RIGHT");  excessDots = Math.max(excessDots, f.x() + f.w() - safeR); }
-            if (f.y() + f.h() > safeB) { sides.add("BOTTOM"); excessDots = Math.max(excessDots, f.y() + f.h() - safeB); }
+            if (f.x()          < safeL) { sides.add("LEFT");   int ex = safeL - f.x();         if (ex > excessDots) { excessDots = ex; sideMarginDots = marginLeftDots; } }
+            if (f.y()          < safeT) { sides.add("TOP");    int ex = safeT - f.y();         if (ex > excessDots) { excessDots = ex; sideMarginDots = marginTopDots; } }
+            if (f.x() + f.w() > safeR) { sides.add("RIGHT");  int ex = f.x() + f.w() - safeR; if (ex > excessDots) { excessDots = ex; sideMarginDots = marginRightDots; } }
+            if (f.y() + f.h() > safeB) { sides.add("BOTTOM"); int ex = f.y() + f.h() - safeB; if (ex > excessDots) { excessDots = ex; sideMarginDots = marginBottomDots; } }
 
             if (!sides.isEmpty()) {
                 RenderWarning w = new RenderWarning();
@@ -202,7 +209,8 @@ public class ZplRenderer {
                 w.setSides(String.join("+", sides));
                 w.setExcessDots(excessDots);
                 w.setDetail(String.join("、", sides)
-                        + " 超出安全邊界 " + String.format("%.1f", (double) excessDots / dpmm) + " mm（安全距離 3 mm）");
+                        + " 超出安全邊界 " + String.format("%.1f", (double) excessDots / dpmm)
+                        + " mm（安全距離 " + String.format("%.1f", (double) sideMarginDots / dpmm) + " mm）");
                 w.setBoundsA(new int[]{f.x(), f.y(), f.w(), f.h()});
                 warnings.add(w);
             }
@@ -241,7 +249,7 @@ public class ZplRenderer {
             java.util.Set.of("CODE128", "CODE39", "QRCODE", "DATAMATRIX");
 
     // ── CG Triumvirate Bold advance widths ────────────────────────────
-    // 量測來源：Labelary 輸出（^A0N,30,24）
+    // 量測來源：ZPL 參考 PNG（^A0N,30,24）
     // 使用方式：charWidth = CG_WIDTHS[c] * effectiveW / CG_REF_RATIO
     //   effectiveW = fontWidth（若已指定）否則 = fontHeight
     //   CG_REF_RATIO = 量測時的 w/h = 24/30
@@ -249,7 +257,7 @@ public class ZplRenderer {
     private static final float CG_DEFAULT_RATIO = 0.3333f;        // 未量測字元的預設值
     private static final java.util.Map<Character, Float> CG_WIDTHS = new java.util.HashMap<>();
     static {
-        // ── 大寫 A–Z（advance width，從 Labelary PNG 量測）──────────────
+        // ── 大寫 A–Z（advance width，從參考 PNG 量測）──────────────
         CG_WIDTHS.put('A', 0.4667f);  CG_WIDTHS.put('B', 0.4000f);
         CG_WIDTHS.put('C', 0.4667f);  CG_WIDTHS.put('D', 0.4667f);
         CG_WIDTHS.put('E', 0.4000f);  CG_WIDTHS.put('F', 0.3667f);
@@ -749,7 +757,7 @@ public class ZplRenderer {
 
         Map<EncodeHintType, Object> hints = new EnumMap<>(EncodeHintType.class);
         hints.put(EncodeHintType.MARGIN, 0);
-        // ZPL ^BC default mode = Code128-B (Zebra/Labelary never auto-switch to C).
+        // ZPL ^BC default mode = Code128-B (Zebra never auto-switches to C).
         hints.put(EncodeHintType.FORCE_CODE_SET, "B");
 
         // Two-step: encode at width=1 → ZXing scale=1 → matrix.getWidth() = exact module count.

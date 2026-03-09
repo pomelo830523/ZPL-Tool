@@ -7,11 +7,11 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 從 Labelary 渲染的 PNG 量測每個字元的寬度，輸出 CG_WIDTHS 查表。
+ * 從 ZPL 參考 PNG 量測每個字元的寬度，輸出 CG_WIDTHS 查表。
  *
  * 使用方式（在 backend 目錄執行）：
  *   mvn exec:java -Dexec.mainClass="com.zplviewer.util.CharWidthMeasurer" \
- *                 -Dexec.args="../image/labelary_font.png"
+ *                 -Dexec.args="../image/font_reference.png"
  *
  * 測試用 ZPL：
  *   ^XA
@@ -36,7 +36,7 @@ public class CharWidthMeasurer {
 
     // ─────────────────────────────────────────────────────────────────
     public static void main(String[] args) throws Exception {
-        String path = args.length > 0 ? args[0] : "../image/labelary_font.png";
+        String path = args.length > 0 ? args[0] : "../image/font_reference.png";
         BufferedImage img = ImageIO.read(new File(path));
         if (img == null) { System.err.println("無法讀取圖片: " + path); return; }
 
@@ -185,7 +185,7 @@ public class CharWidthMeasurer {
     static void printJavaTable(String line1, int[] dots1, String line2, int[] dots2) {
         System.out.println("static final Map<Character, Float> CG_WIDTHS = new HashMap<>();");
         System.out.println("static {");
-        System.out.println("    // Measured from Labelary output (^A0N," + FONT_H + "," + FONT_W + ")");
+        System.out.println("    // Measured from ZPL reference PNG (^A0N," + FONT_H + "," + FONT_W + ")");
 
         printChars(line1, dots1);
         printChars(line2, dots2);
